@@ -7,8 +7,6 @@ import {
   TextField,
   MenuItem,
   Box,
-  Tabs,
-  Tab,
 } from "@mui/material";
 import {
   Line,
@@ -23,122 +21,70 @@ import dayjs from "dayjs";
 import { EmgReading, supabase } from "../lib/supabaseClient";
 
 type ChartPoint = { t: string; value: number; device_id?: string | null };
-type ViewMode = "realtime" | "last";
 
 export default function EmgChart() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
   const [devices, setDevices] = useState<string[]>([]);
   const [deviceFilter, setDeviceFilter] = useState<string>("all");
-  const [viewMode, setViewMode] = useState<ViewMode>("last");
 
-  // Maintain device list independently
   useEffect(() => {
     let isMounted = true;
-    const fetchDevices = async () => {
-      const { data: devs } = await supabase
+
+    const loadInitial = async () => {
+      const sinceIso = dayjs().subtract(60, "minute").toISOString();
+      const { data } = await supabase
         .from("emg_readings")
-        .select("device_id")
-        .not("device_id", "is", null)
-        .limit(1000);
+        .select("created_at, value_mv, device_id")
+        .gte("created_at", sinceIso)
+        .order("created_at", { ascending: true });
       if (!isMounted) return;
-      const unique = Array.from(
-        new Set((devs ?? []).map((r: any) => r.device_id))
-      );
-      setDevices(unique as string[]);
-    };
-    fetchDevices();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Load data based on mode and manage realtime subscription
-  useEffect(() => {
-    let isMounted = true;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-
-    const buildBaseQuery = () => {
-      let query = supabase
-        .from("emg_readings")
-        .select("created_at, value_mv, device_id");
-      if (deviceFilter !== "all") {
-        query = query.eq("device_id", deviceFilter);
-      }
-      return query;
-    };
-
-    const toPoints = (rows: any[]) =>
-      (rows ?? []).map((r: any) => ({
+      const pts = (data ?? []).map((r: any) => ({
         t: r.created_at,
         value: r.value_mv,
         device_id: r.device_id as string | null,
       }));
-
-    const loadRealtime = async () => {
-      const sinceIso = dayjs().subtract(60, "minute").toISOString();
-      const { data } = await buildBaseQuery()
-        .gte("created_at", sinceIso)
-        .order("created_at", { ascending: true });
-      if (!isMounted) return;
-      setPoints(toPoints(data ?? []));
-
-      channel = supabase
-        .channel("emg_readings_inserts")
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "emg_readings" },
-          (payload) => {
-            const row = payload.new as EmgReading;
-            if (deviceFilter !== "all" && row.device_id !== deviceFilter)
-              return;
-            setPoints((prev) =>
-              [
-                ...prev,
-                {
-                  t: row.created_at,
-                  value: row.value_mv,
-                  device_id: row.device_id,
-                },
-              ].slice(-2000)
-            );
-          }
+      setPoints(pts);
+      const uniqueDevices = Array.from(
+        new Set(
+          (data ?? []).map((r: any) => r.device_id).filter((d: any) => !!d)
         )
-        .subscribe();
+      );
+      setDevices(uniqueDevices as string[]);
     };
 
-    const loadLastLog = async () => {
-      // Find latest timestamp for the selected device (or overall)
-      const { data: latestRows } = await buildBaseQuery()
-        .order("created_at", { ascending: false })
-        .limit(1);
-      const latest = latestRows && latestRows[0]?.created_at;
-      if (!latest) {
-        if (isMounted) setPoints([]);
-        return;
-      }
-      const end = dayjs(latest);
-      const start = end.subtract(60, "minute");
-      const { data } = await buildBaseQuery()
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
-        .order("created_at", { ascending: true });
-      if (!isMounted) return;
-      setPoints(toPoints(data ?? []));
-    };
+    loadInitial();
 
-    if (viewMode === "realtime") {
-      loadRealtime();
-    } else {
-      loadLastLog();
-    }
+    const channel = supabase
+      .channel("emg_readings_inserts")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "emg_readings" },
+        (payload) => {
+          const row = payload.new as EmgReading;
+          setPoints((prev) =>
+            [
+              ...prev,
+              {
+                t: row.created_at,
+                value: row.value_mv,
+                device_id: row.device_id,
+              },
+            ].slice(-2000)
+          );
+          setDevices((prev) => {
+            const set = new Set(prev);
+            if (row.device_id) set.add(row.device_id);
+            return Array.from(set);
+          });
+        }
+      )
+      .subscribe();
 
     return () => {
       isMounted = false;
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      supabase.removeChannel(channel);
     };
-  }, [viewMode, deviceFilter]);
+  }, []);
 
   const data = useMemo(() => {
     const filtered =
@@ -153,28 +99,9 @@ export default function EmgChart() {
 
   return (
     <Card>
-      <CardHeader
-        title="EMG"
-        subheader={
-          viewMode === "realtime"
-            ? "Real-time (last 60 minutes)"
-            : "Last log (60 minutes ending at latest reading)"
-        }
-      />
+      <CardHeader title="EMG - Real-time" subheader="Last 60 minutes" />
       <CardContent>
-        <Stack
-          direction="row"
-          spacing={2}
-          sx={{ mb: 2, alignItems: "center", justifyContent: "space-between" }}
-        >
-          <Tabs
-            value={viewMode}
-            onChange={(_, v) => setViewMode(v)}
-            aria-label="EMG view mode"
-          >
-            <Tab label="Real-time" value="realtime" />
-            <Tab label="Last log" value="last" />
-          </Tabs>
+        <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
           <TextField
             select
             size="small"
