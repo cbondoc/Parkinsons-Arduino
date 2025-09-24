@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader } from "@mui/material";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  Stack,
+  TextField,
+  MenuItem,
+} from "@mui/material";
 import {
   Line,
   LineChart,
@@ -12,10 +19,12 @@ import {
 import dayjs from "dayjs";
 import { EmgReading, supabase } from "../lib/supabaseClient";
 
-type ChartPoint = { t: string; value: number };
+type ChartPoint = { t: string; value: number; device_id?: string | null };
 
 export default function EmgChart() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
+  const [devices, setDevices] = useState<string[]>([]);
+  const [deviceFilter, setDeviceFilter] = useState<string>("all");
 
   useEffect(() => {
     let isMounted = true;
@@ -24,15 +33,22 @@ export default function EmgChart() {
       const sinceIso = dayjs().subtract(60, "minute").toISOString();
       const { data } = await supabase
         .from("emg_readings")
-        .select("created_at, value_mv")
+        .select("created_at, value_mv, device_id")
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: true });
       if (!isMounted) return;
       const pts = (data ?? []).map((r: any) => ({
         t: r.created_at,
         value: r.value_mv,
+        device_id: r.device_id as string | null,
       }));
       setPoints(pts);
+      const uniqueDevices = Array.from(
+        new Set(
+          (data ?? []).map((r: any) => r.device_id).filter((d: any) => !!d)
+        )
+      );
+      setDevices(uniqueDevices as string[]);
     };
 
     loadInitial();
@@ -45,8 +61,20 @@ export default function EmgChart() {
         (payload) => {
           const row = payload.new as EmgReading;
           setPoints((prev) =>
-            [...prev, { t: row.created_at, value: row.value_mv }].slice(-2000)
+            [
+              ...prev,
+              {
+                t: row.created_at,
+                value: row.value_mv,
+                device_id: row.device_id,
+              },
+            ].slice(-2000)
           );
+          setDevices((prev) => {
+            const set = new Set(prev);
+            if (row.device_id) set.add(row.device_id);
+            return Array.from(set);
+          });
         }
       )
       .subscribe();
@@ -57,19 +85,38 @@ export default function EmgChart() {
     };
   }, []);
 
-  const data = useMemo(
-    () =>
-      points.map((p) => ({
-        time: dayjs(p.t).format("HH:mm:ss"),
-        value: p.value,
-      })),
-    [points]
-  );
+  const data = useMemo(() => {
+    const filtered =
+      deviceFilter === "all"
+        ? points
+        : points.filter((p) => p.device_id === deviceFilter);
+    return filtered.map((p) => ({
+      time: dayjs(p.t).format("HH:mm:ss"),
+      value: p.value,
+    }));
+  }, [points, deviceFilter]);
 
   return (
     <Card>
       <CardHeader title="EMG - Real-time" subheader="Last 60 minutes" />
       <CardContent>
+        <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+          <TextField
+            select
+            size="small"
+            label="Device"
+            value={deviceFilter}
+            onChange={(e) => setDeviceFilter(e.target.value)}
+            sx={{ width: 220 }}
+          >
+            <MenuItem value="all">All devices</MenuItem>
+            {devices.map((d) => (
+              <MenuItem key={d} value={d}>
+                {d}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Stack>
         <div style={{ width: "100%", height: 320 }}>
           <ResponsiveContainer>
             <LineChart
