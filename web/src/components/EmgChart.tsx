@@ -6,6 +6,7 @@ import {
   Stack,
   TextField,
   MenuItem,
+  Box,
 } from "@mui/material";
 import {
   Line,
@@ -117,8 +118,8 @@ export default function EmgChart() {
             ))}
           </TextField>
         </Stack>
-        <div style={{ width: "100%", height: 320 }}>
-          <ResponsiveContainer>
+        <Box sx={{ width: "100%", maxWidth: 900, height: 320, mx: "auto" }}>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={data}
               margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
@@ -137,7 +138,7 @@ export default function EmgChart() {
               />
             </LineChart>
           </ResponsiveContainer>
-        </div>
+        </Box>
       </CardContent>
     </Card>
   );

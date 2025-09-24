@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { DataGrid, GridColDef } from "@mui/x-data-grid";
-import { Stack, TextField, MenuItem, Button } from "@mui/material";
+import {
+  Stack,
+  TextField,
+  MenuItem,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Box,
+} from "@mui/material";
 import dayjs from "dayjs";
 import { EmgReading, supabase } from "../lib/supabaseClient";
 
@@ -54,38 +63,48 @@ export default function EmgTable() {
   }, [deviceFilter]);
 
   return (
-    <div style={{ width: "100%", height: 480 }}>
-      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-        <TextField
-          select
-          size="small"
-          label="Device"
-          value={deviceFilter}
-          onChange={(e) => setDeviceFilter(e.target.value)}
-          sx={{ width: 220 }}
-        >
-          <MenuItem value="all">All devices</MenuItem>
-          {devices.map((d) => (
-            <MenuItem key={d} value={d}>
-              {d}
-            </MenuItem>
-          ))}
-        </TextField>
-        <Button variant="outlined" size="small" onClick={fetchData}>
-          Refresh
-        </Button>
-      </Stack>
-      <DataGrid
-        rows={rows}
-        columns={columns}
-        getRowId={(r) => r.id}
-        pagination
-        rowCount={rowCount}
-        pageSizeOptions={[25, 50, 100, 200, 500]}
-        initialState={{
-          pagination: { paginationModel: { pageSize: 50, page: 0 } },
-        }}
+    <Card>
+      <CardHeader
+        title="EMG History"
+        action={
+          <Stack direction="row" spacing={2}>
+            <TextField
+              select
+              size="small"
+              label="Device"
+              value={deviceFilter}
+              onChange={(e) => setDeviceFilter(e.target.value)}
+              sx={{ minWidth: 220 }}
+            >
+              <MenuItem value="all">All devices</MenuItem>
+              {devices.map((d) => (
+                <MenuItem key={d} value={d}>
+                  {d}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Button variant="outlined" size="small" onClick={fetchData}>
+              Refresh
+            </Button>
+          </Stack>
+        }
       />
-    </div>
+      <CardContent>
+        <Box sx={{ width: "100%" }}>
+          <DataGrid
+            rows={rows}
+            columns={columns}
+            getRowId={(r) => r.id}
+            pagination
+            rowCount={rowCount}
+            pageSizeOptions={[25, 50, 100, 200, 500]}
+            initialState={{
+              pagination: { paginationModel: { pageSize: 50, page: 0 } },
+            }}
+            autoHeight
+          />
+        </Box>
+      </CardContent>
+    </Card>
   );
 }
