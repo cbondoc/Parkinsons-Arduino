@@ -3,6 +3,7 @@
 
 ArduinoLEDMatrix matrix;
 
+
 // ==================================================
 // 🔧 USER SETTINGS (you said you already filled them)
 // ==================================================
