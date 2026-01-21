@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS public.arduino_logs;
+
+CREATE TABLE public.arduino_logs (
+  id BIGSERIAL PRIMARY KEY,
+
+  emg_value INTEGER NOT NULL,
+
+  relay_state BOOLEAN NOT NULL,
+
+  flex_detected BOOLEAN NOT NULL,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT now()
+);
