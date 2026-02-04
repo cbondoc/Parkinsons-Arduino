@@ -1,17 +1,8 @@
 import { useEffect, useState } from "react";
 import { DataGrid, GridColDef } from "@mui/x-data-grid";
-import {
-  Stack,
-  TextField,
-  MenuItem,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  Box,
-} from "@mui/material";
+import { Button, Card, CardContent, CardHeader, Box } from "@mui/material";
 import dayjs from "dayjs";
-import { EmgReading, supabase } from "../lib/supabaseClient";
+import { ArduinoLog, supabase } from "../lib/supabaseClient";
 
 const columns: GridColDef[] = [
   {
@@ -21,72 +12,116 @@ const columns: GridColDef[] = [
     valueFormatter: ({ value }) =>
       dayjs(value as string).format("YYYY-MM-DD HH:mm:ss"),
   },
-  { field: "device_id", headerName: "Device", flex: 1 },
-  { field: "value_mv", headerName: "Value (mV)", flex: 1, type: "number" },
+  { field: "emg_value", headerName: "EMG Value", flex: 1, type: "number" },
+  {
+    field: "relay_state",
+    headerName: "Relay State",
+    flex: 1,
+    type: "boolean",
+    valueFormatter: ({ value }) => (value ? "On" : "Off"),
+  },
+  {
+    field: "flex_detected",
+    headerName: "Flex Detected",
+    flex: 1,
+    type: "boolean",
+    valueFormatter: ({ value }) => (value ? "Yes" : "No"),
+  },
 ];
 
 export default function EmgTable() {
-  const [rows, setRows] = useState<EmgReading[]>([]);
+  const [rows, setRows] = useState<ArduinoLog[]>([]);
   const [rowCount, setRowCount] = useState<number>(0);
-  const [devices, setDevices] = useState<string[]>([]);
-  const [deviceFilter, setDeviceFilter] = useState<string>("all");
 
   const fetchData = async () => {
+    // First, try to get ANY data without date filter to check if table is accessible
+    const { data: testData, error: testError } = await supabase
+      .from("arduino_logs")
+      .select("id, created_at")
+      .limit(5);
+
+    console.log(
+      "Test query (no date filter):",
+      testData?.length || 0,
+      "records"
+    );
+    if (testError) {
+      console.error("Test query error:", testError);
+      console.error("This is likely an RLS (Row Level Security) issue.");
+      console.error(
+        "Run the SQL in setup_arduino_logs_rls.sql to fix permissions."
+      );
+      return;
+    }
+    if (testData && testData.length > 0) {
+      console.log("Sample data:", testData[0]);
+      console.log("Current time:", dayjs().toISOString());
+    } else {
+      console.warn(
+        "No data returned - check RLS policies. Run setup_arduino_logs_rls.sql"
+      );
+    }
+
     const sinceIso = dayjs().subtract(1, "month").toISOString();
-    let query = supabase
-      .from("emg_readings")
+    console.log("Querying with date filter >=:", sinceIso);
+
+    const { data, count, error } = await supabase
+      .from("arduino_logs")
       .select("*", { count: "exact" })
       .gte("created_at", sinceIso)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (deviceFilter !== "all") {
-      query = query.eq("device_id", deviceFilter);
+
+    if (error) {
+      console.error("Error loading table data:", error);
+      console.error("Error details:", JSON.stringify(error, null, 2));
+      return;
     }
-    const { data, count } = await query;
-    setRows((data ?? []) as EmgReading[]);
-    setRowCount(count ?? 0);
-    // populate devices list lazily
-    const { data: devs } = await supabase
-      .from("emg_readings")
-      .select("device_id")
-      .not("device_id", "is", null)
-      .limit(1000);
-    const unique = Array.from(
-      new Set((devs ?? []).map((r: any) => r.device_id))
+    console.log(
+      "Table data loaded:",
+      data?.length || 0,
+      "records, total count:",
+      count
     );
-    setDevices(unique as string[]);
+    console.log("Since ISO:", sinceIso);
+
+    // If no data with date filter, try without date filter (just limit)
+    if ((!data || data.length === 0) && count === 0) {
+      console.log("No data with date filter, trying without date filter...");
+      const { data: allData, count: allCount } = await supabase
+        .from("arduino_logs")
+        .select("*", { count: "exact" })
+        .order("created_at", { ascending: false })
+        .limit(500);
+      console.log(
+        "Data without date filter:",
+        allData?.length || 0,
+        "records, count:",
+        allCount
+      );
+      if (allData && allData.length > 0) {
+        setRows(allData as ArduinoLog[]);
+        setRowCount(allCount ?? 0);
+        return;
+      }
+    }
+
+    setRows((data ?? []) as ArduinoLog[]);
+    setRowCount(count ?? 0);
   };
 
   useEffect(() => {
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceFilter]);
+  }, []);
 
   return (
     <Card>
       <CardHeader
         title="EMG History"
         action={
-          <Stack direction="row" spacing={2}>
-            <TextField
-              select
-              size="small"
-              label="Device"
-              value={deviceFilter}
-              onChange={(e) => setDeviceFilter(e.target.value)}
-              sx={{ minWidth: 220 }}
-            >
-              <MenuItem value="all">All devices</MenuItem>
-              {devices.map((d) => (
-                <MenuItem key={d} value={d}>
-                  {d}
-                </MenuItem>
-              ))}
-            </TextField>
-            <Button variant="outlined" size="small" onClick={fetchData}>
-              Refresh
-            </Button>
-          </Stack>
+          <Button variant="outlined" size="small" onClick={fetchData}>
+            Refresh
+          </Button>
         }
       />
       <CardContent>

@@ -13,8 +13,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "");
 
 export type EmgReading = {
-  id: string;
-  device_id: string | null;
-  value_mv: number;
+  id: number;
+  emg_value: number;
+  relay_state: boolean;
+  flex_detected: boolean;
   created_at: string;
+  timestamp: string | null;
 };
+
+export type ArduinoLog = EmgReading;
