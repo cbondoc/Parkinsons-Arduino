@@ -21,7 +21,7 @@ import { ArduinoLog, supabase } from "../lib/supabaseClient";
 
 type ChartPoint = { t: string; value: number };
 
-export default function EmgChart() {
+export default function TremorChart() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
   const [mode, setMode] = useState<"live" | "history">("live");
 

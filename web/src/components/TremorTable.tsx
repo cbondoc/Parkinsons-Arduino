@@ -34,7 +34,7 @@ const columns: GridColDef[] = [
   },
 ];
 
-export default function EmgTable() {
+export default function TremorTable() {
   const [rows, setRows] = useState<ArduinoLog[]>([]);
   const [rowCount, setRowCount] = useState<number>(0);
 

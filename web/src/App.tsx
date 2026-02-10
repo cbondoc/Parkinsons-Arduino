@@ -8,8 +8,8 @@ import {
   Typography,
 } from "@mui/material";
 import Brightness4Icon from "@mui/icons-material/Brightness4";
-import EmgChart from "./components/EmgChart";
-import EmgTable from "./components/EmgTable";
+import TremorChart from "./components/TremorChart";
+import TremorTable from "./components/TremorTable";
 import { useContext } from "react";
 import { ColorModeContext } from "./theme/AppThemeProvider";
 
@@ -35,13 +35,13 @@ export default function App() {
         <Box sx={{ maxWidth: 960, mx: "auto" }}>
           <Stack spacing={3}>
             <Box sx={{ pt: 3 }}>
-              <EmgChart />
+              <TremorChart />
             </Box>
             <Box>
               <Typography variant="h6" sx={{ mb: 1 }}>
                 History (last month)
               </Typography>
-              <EmgTable />
+              <TremorTable />
             </Box>
           </Stack>
         </Box>
