@@ -12,20 +12,25 @@ const columns: GridColDef[] = [
     valueFormatter: ({ value }) =>
       dayjs(value as string).format("YYYY-MM-DD HH:mm:ss"),
   },
-  { field: "emg_value", headerName: "EMG Value", flex: 1, type: "number" },
   {
-    field: "relay_state",
-    headerName: "Relay State",
+    field: "gyro_mag",
+    headerName: "Gyro Magnitude",
     flex: 1,
-    type: "boolean",
-    valueFormatter: ({ value }) => (value ? "On" : "Off"),
+    type: "number",
+    valueFormatter: ({ value }) =>
+      typeof value === "number" ? value.toFixed(2) : value,
   },
   {
-    field: "flex_detected",
-    headerName: "Flex Detected",
+    field: "vib_count",
+    headerName: "Vibration Count",
     flex: 1,
-    type: "boolean",
-    valueFormatter: ({ value }) => (value ? "Yes" : "No"),
+    type: "number",
+  },
+  {
+    field: "severity",
+    headerName: "Severity",
+    flex: 1,
+    valueGetter: ({ value }) => value || "Unknown",
   },
 ];
 
@@ -117,7 +122,7 @@ export default function EmgTable() {
   return (
     <Card>
       <CardHeader
-        title="EMG History"
+        title="Tremor History"
         action={
           <Button variant="outlined" size="small" onClick={fetchData}>
             Refresh

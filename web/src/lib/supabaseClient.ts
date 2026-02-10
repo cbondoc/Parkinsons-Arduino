@@ -12,13 +12,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "");
 
-export type EmgReading = {
-  id: number;
-  emg_value: number;
-  relay_state: boolean;
-  flex_detected: boolean;
+export type ArduinoLog = {
+  id: string;
+  gyro_mag: number;
+  gx: number | null;
+  gy: number | null;
+  gz: number | null;
+  vib_count: number;
+  severity: "NO TREMOR" | "MILD TREMOR" | "INTENSE TREMOR";
   created_at: string;
-  timestamp: string | null;
 };
-
-export type ArduinoLog = EmgReading;

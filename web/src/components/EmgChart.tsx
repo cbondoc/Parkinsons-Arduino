@@ -38,7 +38,7 @@ export default function EmgChart() {
       
       const { data, error } = await supabase
         .from("arduino_logs")
-        .select("created_at, emg_value")
+        .select("created_at, gyro_mag")
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: true })
         .limit(mode === "history" ? 20000 : 5000);
@@ -55,7 +55,7 @@ export default function EmgChart() {
       );
       const pts = (data ?? []).map((r) => ({
         t: r.created_at,
-        value: r.emg_value,
+        value: r.gyro_mag,
       }));
       setPoints(pts);
     };
@@ -76,7 +76,7 @@ export default function EmgChart() {
                 ...prev,
                 {
                   t: row.created_at,
-                  value: row.emg_value,
+                  value: row.gyro_mag,
                 },
               ].slice(-2000)
             );
@@ -105,7 +105,7 @@ export default function EmgChart() {
       const sinceIso = dayjs().subtract(15, "minute").toISOString();
       const { data, error } = await supabase
         .from("arduino_logs")
-        .select("created_at, emg_value")
+        .select("created_at, gyro_mag")
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: true })
         .limit(2000);
@@ -119,10 +119,10 @@ export default function EmgChart() {
           // merge new data keeping order and de-duping by timestamp/value pair
           const merged = [...prev];
           data.forEach((d) => {
-            const key = `${d.created_at}-${d.emg_value}`;
+            const key = `${d.created_at}-${d.gyro_mag}`;
             const exists = merged.find((p) => `${p.t}-${p.value}` === key);
             if (!exists) {
-              merged.push({ t: d.created_at, value: d.emg_value });
+              merged.push({ t: d.created_at, value: d.gyro_mag });
             }
           });
           return merged.slice(-2000);
@@ -176,7 +176,7 @@ export default function EmgChart() {
   return (
     <Card>
       <CardHeader
-        title="EMG - Real-time"
+        title="Tremor Monitor - Real-time"
         subheader={
           data.length > 0
             ? `Showing ${data.length} points (${points.length} total loaded)`

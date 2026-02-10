@@ -20,7 +20,7 @@ export default function App() {
       <AppBar position="sticky" color="default" enableColorOnDark>
         <Toolbar>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            EMG Logger
+            Tremor Monitor
           </Typography>
           <IconButton
             color="inherit"
