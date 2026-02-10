@@ -6,6 +6,7 @@ import {
   Box,
   ToggleButtonGroup,
   ToggleButton,
+  Alert,
 } from "@mui/material";
 import {
   Line,
@@ -24,6 +25,7 @@ type ChartPoint = { t: string; value: number };
 export default function TremorChart() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
   const [mode, setMode] = useState<"live" | "history">("live");
+  const [error, setError] = useState<string | null>(null);
 
   // Load data based on mode
   useEffect(() => {
@@ -33,12 +35,28 @@ export default function TremorChart() {
       // For history mode, load last 3 months. For live mode, load last 24 hours
       const timeWindow = mode === "history" ? 90 : 1; // days
       const sinceIso = dayjs().subtract(timeWindow, "day").toISOString();
-      console.log(`Chart querying >= (${timeWindow} day window):`, sinceIso);
-      console.log(`Current time:`, dayjs().toISOString());
+      console.log(`📈 Chart querying >= (${timeWindow} day window):`, sinceIso);
+      console.log(`📅 Current time:`, dayjs().toISOString());
+      console.log(`📅 Timezone:`, Intl.DateTimeFormat().resolvedOptions().timeZone);
       
-      const { data, error } = await supabase
+      // First, try without date filter to see if we can access any data
+      console.log("🔍 Testing table access first...");
+      const { data: testData, error: testError, count: testCount } = await supabase
         .from("arduino_logs")
-        .select("created_at, gyro_mag")
+        .select("id", { count: "exact", head: true })
+        .limit(1);
+      
+      if (testError) {
+        console.error("❌ Table access error:", testError);
+        setError(`Cannot access table: ${testError.message}`);
+        return;
+      }
+      
+      console.log(`📊 Table accessible. Total rows: ${testCount ?? "unknown"}`);
+      
+      const { data, error, count } = await supabase
+        .from("arduino_logs")
+        .select("created_at, gyro_mag", { count: "exact" })
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: true })
         .limit(mode === "history" ? 20000 : 5000);
@@ -48,16 +66,49 @@ export default function TremorChart() {
       if (error) {
         console.error("Error loading chart data:", error);
         console.error("Error details:", JSON.stringify(error, null, 2));
+        setError(`Error loading chart data: ${error.message}`);
         return;
       }
+      setError(null);
       console.log(
-        `Chart data loaded: ${data?.length || 0} records (last ${timeWindow} day(s))`
+        `📈 Chart data loaded: ${data?.length || 0} records (last ${timeWindow} day(s)), total in DB: ${count ?? "unknown"}`
       );
+      
+      // If no data with date filter, try without date filter
+      if (!data || data.length === 0) {
+        console.log("No data with date filter, trying without date filter...");
+        const { data: allData, error: allError } = await supabase
+          .from("arduino_logs")
+          .select("created_at, gyro_mag")
+          .order("created_at", { ascending: true })
+          .limit(mode === "history" ? 20000 : 5000);
+        
+        if (!isMounted) return;
+        
+        if (allError) {
+          console.error("Error loading all data:", allError);
+          setError(`Error loading data: ${allError.message}`);
+          return;
+        }
+        
+        console.log(`All data loaded: ${allData?.length || 0} records`);
+        if (allData && allData.length > 0) {
+          const pts = allData.map((r) => ({
+            t: r.created_at,
+            value: r.gyro_mag,
+          }));
+          setPoints(pts);
+          setError(null);
+          return;
+        }
+      }
+      
       const pts = (data ?? []).map((r) => ({
         t: r.created_at,
         value: r.gyro_mag,
       }));
       setPoints(pts);
+      setError(null);
     };
 
     loadData();
@@ -112,6 +163,7 @@ export default function TremorChart() {
       if (!isMounted) return;
       if (error) {
         console.error("Live polling error:", error);
+        setError(`Live polling error: ${error.message}`);
         return;
       }
       if (data) {
@@ -200,6 +252,11 @@ export default function TremorChart() {
         }
       />
       <CardContent>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
         <Box sx={{ width: "100%", maxWidth: 900, height: 320, mx: "auto" }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart

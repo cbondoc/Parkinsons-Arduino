@@ -5,9 +5,13 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   // eslint-disable-next-line no-console
-  console.warn(
-    "Supabase env vars missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY"
+  console.error(
+    "❌ Supabase env vars missing! Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env file"
   );
+  console.error("Current values:", {
+    url: supabaseUrl ? "✓ Set" : "✗ Missing",
+    key: supabaseAnonKey ? "✓ Set" : "✗ Missing",
+  });
 }
 
 export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "");
