@@ -56,12 +56,13 @@ export default function TremorChart() {
       
       console.log(`📊 Table accessible. Total rows: ${testCount ?? "unknown"}`);
       
+      // Live: order DESC so we get newest rows first (Supabase returns max 1000 per request)
       const { data, error, count } = await supabase
         .from("arduino_logs")
         .select("created_at, gyro_mag", { count: "exact" })
         .gte("created_at", sinceIso)
-        .order("created_at", { ascending: true })
-        .limit(mode === "history" ? 20000 : 5000);
+        .order("created_at", { ascending: mode === "history" })
+        .limit(mode === "history" ? 20000 : 1000);
 
       if (!isMounted) return;
 
@@ -106,10 +107,10 @@ export default function TremorChart() {
         }
       }
       
-      const pts = (data ?? []).map((r) => ({
-        t: r.created_at,
-        value: r.gyro_mag,
-      }));
+      const raw = data ?? [];
+      const pts = mode === "live"
+        ? [...raw].reverse().map((r) => ({ t: r.created_at, value: r.gyro_mag }))
+        : raw.map((r) => ({ t: r.created_at, value: r.gyro_mag }));
       setPoints(pts);
       setError(null);
     };
@@ -157,12 +158,13 @@ export default function TremorChart() {
     let isMounted = true;
     const poll = async () => {
       const sinceIso = dayjs().subtract(30, "minute").toISOString();
+      // Order DESC to get newest rows first (Supabase returns max 1000 per request)
       const { data, error } = await supabase
         .from("arduino_logs")
         .select("created_at, gyro_mag")
         .gte("created_at", sinceIso)
-        .order("created_at", { ascending: true })
-        .limit(5000);
+        .order("created_at", { ascending: false })
+        .limit(1000);
       if (!isMounted) return;
       if (error) {
         console.error("Live polling error:", error);
@@ -170,9 +172,9 @@ export default function TremorChart() {
         return;
       }
       if (data && data.length >= 0) {
-        // Replace points with server's last 30 min so we always show latest from Supabase
+        // Reverse so chart is chronological; we now have newest 1000 in window
         setPoints(
-          data.map((d) => ({ t: d.created_at, value: d.gyro_mag }))
+          [...data].reverse().map((d) => ({ t: d.created_at, value: d.gyro_mag }))
         );
       }
     };
