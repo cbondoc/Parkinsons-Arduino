@@ -191,21 +191,23 @@ export default function TremorChart() {
 
   const data = useMemo(() => {
     const now = dayjs();
-    // For live mode: show last 10 minutes
-    // For history mode: show all loaded data (up to 30 days)
+    // For live mode: show last 30 minutes (expanded from 10 to catch more data)
+    // For history mode: show all loaded data (up to 90 days)
     const windowStart =
       mode === "live" 
-        ? now.subtract(10, "minute") 
+        ? now.subtract(30, "minute") 
         : now.subtract(90, "day"); // Show up to 90 days for history (covers all loaded data)
 
     const filtered = points.filter((p) => {
       const pointTime = dayjs(p.t);
       // For history, show all data that's not in the future
-      // For live, only show recent data
+      // For live, only show recent data (within the window)
       if (mode === "history") {
         return pointTime.isBefore(now) || pointTime.isSame(now);
       } else {
-        return pointTime.isAfter(windowStart) && pointTime.isBefore(now);
+        // Include data from windowStart to now (inclusive)
+        return (pointTime.isAfter(windowStart) || pointTime.isSame(windowStart)) && 
+               (pointTime.isBefore(now) || pointTime.isSame(now));
       }
     });
 
@@ -246,8 +248,8 @@ export default function TremorChart() {
               if (v) setMode(v);
             }}
           >
-            <ToggleButton value="live">Live (10m)</ToggleButton>
-            <ToggleButton value="history">History (24h)</ToggleButton>
+            <ToggleButton value="live">Live (30m)</ToggleButton>
+            <ToggleButton value="history">History (90d)</ToggleButton>
           </ToggleButtonGroup>
         }
       />
