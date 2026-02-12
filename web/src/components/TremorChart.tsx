@@ -32,10 +32,12 @@ export default function TremorChart() {
     let isMounted = true;
 
     const loadData = async () => {
-      // For history mode, load last 3 months. For live mode, load last 24 hours
-      const timeWindow = mode === "history" ? 90 : 1; // days
-      const sinceIso = dayjs().subtract(timeWindow, "day").toISOString();
-      console.log(`📈 Chart querying >= (${timeWindow} day window):`, sinceIso);
+      // For history mode, load last 3 months. For live mode, load last 30 minutes
+      const timeWindow = mode === "history" ? 90 : 30; // days for history, minutes for live
+      const sinceIso = mode === "history" 
+        ? dayjs().subtract(timeWindow, "day").toISOString()
+        : dayjs().subtract(timeWindow, "minute").toISOString();
+      console.log(`📈 Chart querying >= (${timeWindow} ${mode === "history" ? "day" : "minute"} window):`, sinceIso);
       console.log(`📅 Current time:`, dayjs().toISOString());
       console.log(`📅 Timezone:`, Intl.DateTimeFormat().resolvedOptions().timeZone);
       
@@ -71,16 +73,16 @@ export default function TremorChart() {
       }
       setError(null);
       console.log(
-        `📈 Chart data loaded: ${data?.length || 0} records (last ${timeWindow} day(s)), total in DB: ${count ?? "unknown"}`
+        `📈 Chart data loaded: ${data?.length || 0} records (last ${timeWindow} ${mode === "history" ? "days" : "minutes"}), total in DB: ${count ?? "unknown"}`
       );
       
-      // If no data with date filter, try without date filter
+      // If no data with date filter, try without date filter — fetch NEWEST rows first
       if (!data || data.length === 0) {
-        console.log("No data with date filter, trying without date filter...");
+        console.log("No data with date filter, fetching newest rows...");
         const { data: allData, error: allError } = await supabase
           .from("arduino_logs")
           .select("created_at, gyro_mag")
-          .order("created_at", { ascending: true })
+          .order("created_at", { ascending: false })
           .limit(mode === "history" ? 20000 : 5000);
         
         if (!isMounted) return;
@@ -91,9 +93,10 @@ export default function TremorChart() {
           return;
         }
         
-        console.log(`All data loaded: ${allData?.length || 0} records`);
+        console.log(`All data loaded: ${allData?.length || 0} records (newest first)`);
         if (allData && allData.length > 0) {
-          const pts = allData.map((r) => ({
+          // Reverse so chart has chronological order (oldest → newest)
+          const pts = [...allData].reverse().map((r) => ({
             t: r.created_at,
             value: r.gyro_mag,
           }));
@@ -146,39 +149,31 @@ export default function TremorChart() {
     };
   }, [mode]);
 
-  // Polling fallback for live mode (helps when realtime is not enabled on the table)
+  // Polling for live mode: always fetch last 30 min from server so UI matches Supabase latest
   useEffect(() => {
     if (mode !== "live") {
       return;
     }
     let isMounted = true;
     const poll = async () => {
-      const sinceIso = dayjs().subtract(15, "minute").toISOString();
+      const sinceIso = dayjs().subtract(30, "minute").toISOString();
       const { data, error } = await supabase
         .from("arduino_logs")
         .select("created_at, gyro_mag")
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: true })
-        .limit(2000);
+        .limit(5000);
       if (!isMounted) return;
       if (error) {
         console.error("Live polling error:", error);
         setError(`Live polling error: ${error.message}`);
         return;
       }
-      if (data) {
-        setPoints((prev) => {
-          // merge new data keeping order and de-duping by timestamp/value pair
-          const merged = [...prev];
-          data.forEach((d) => {
-            const key = `${d.created_at}-${d.gyro_mag}`;
-            const exists = merged.find((p) => `${p.t}-${p.value}` === key);
-            if (!exists) {
-              merged.push({ t: d.created_at, value: d.gyro_mag });
-            }
-          });
-          return merged.slice(-2000);
-        });
+      if (data && data.length >= 0) {
+        // Replace points with server's last 30 min so we always show latest from Supabase
+        setPoints(
+          data.map((d) => ({ t: d.created_at, value: d.gyro_mag }))
+        );
       }
     };
     poll();
@@ -206,8 +201,11 @@ export default function TremorChart() {
         return pointTime.isBefore(now) || pointTime.isSame(now);
       } else {
         // Include data from windowStart to now (inclusive)
-        return (pointTime.isAfter(windowStart) || pointTime.isSame(windowStart)) && 
-               (pointTime.isBefore(now) || pointTime.isSame(now));
+        // Use valueOf() for more reliable comparison
+        const pointValue = pointTime.valueOf();
+        const windowStartValue = windowStart.valueOf();
+        const nowValue = now.valueOf();
+        return pointValue >= windowStartValue && pointValue <= nowValue;
       }
     });
 
@@ -215,8 +213,19 @@ export default function TremorChart() {
     console.log(`  Total points loaded: ${points.length}`);
     console.log(`  Window: ${windowStart.format()} to ${now.format()}`);
     if (points.length > 0) {
-      console.log(`  First point: ${dayjs(points[0].t).format()}`);
-      console.log(`  Last point: ${dayjs(points[points.length - 1].t).format()}`);
+      const firstPoint = dayjs(points[0].t);
+      const lastPoint = dayjs(points[points.length - 1].t);
+      console.log(`  First point: ${firstPoint.format()} (${firstPoint.valueOf()})`);
+      console.log(`  Last point: ${lastPoint.format()} (${lastPoint.valueOf()})`);
+      console.log(`  Window start: ${windowStart.valueOf()}, Window end: ${now.valueOf()}`);
+      if (mode === "live" && filtered.length === 0 && points.length > 0) {
+        // Show why points are being filtered out
+        const samplePoint = points[Math.floor(points.length / 2)];
+        const sampleTime = dayjs(samplePoint.t);
+        console.warn(`  Sample point time: ${sampleTime.format()} (${sampleTime.valueOf()})`);
+        console.warn(`  Is after window start? ${sampleTime.valueOf() >= windowStart.valueOf()}`);
+        console.warn(`  Is before now? ${sampleTime.valueOf() <= now.valueOf()}`);
+      }
     }
 
     return filtered
