@@ -2,6 +2,12 @@
 #include <Arduino_LED_Matrix.h>
 #include <WiFiS3.h>
 
+/* ==================== CALIBRATION ==================== */
+// Set to 1 to run LED matrix calibration, then 0 when done.
+// Open Serial Monitor (115200), watch the LED: each step shows ONE corner or full.
+// Tell me which physical position lights for step 1, 2, 3, 4 (e.g. "1=bottom-right, 2=bottom-left").
+#define CALIBRATE 0
+
 /* ==================== WIFI / SUPABASE ==================== */
 
 const char* WIFI_SSID = "bondoc_sala";
@@ -9,7 +15,6 @@ const char* WIFI_PASS = "carybondoc1234";
 
 const char SUPABASE_HOST[] = "emnblgwvbearctiqlfwe.supabase.co";
 const char SUPABASE_API_KEY[] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbmJsZ3d2YmVhcmN0aXFsZndlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MTM3MDcsImV4cCI6MjA3NDI4OTcwN30.h0dJYX5Vk_353hqRT8a_lURfiWKEHqVWSk2leY9zMzY";
-;
 const char SUPABASE_PATH[] = "/rest/v1/arduino_logs";
 
 WiFiSSLClient sslClient;
@@ -26,6 +31,15 @@ ArduinoLEDMatrix matrix;
 const uint32_t FRAME_OFF[3]     = { 0, 0, 0 };
 const uint32_t FRAME_MILD[3]    = { 0x00001800, 0x00003C00, 0x00001800 };
 const uint32_t FRAME_INTENSE[3] = { 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
+// Up arrow (send/upload) when sending to Supabase — ..*.. / ***** / ..*.. / ..*..
+const uint32_t FRAME_SEND[3]    = { 0x00002002, 0x00780200, 0x20000000 };
+
+// Calibration: single-LED frames (row-major 12x8, our assumed layout)
+// 1=top-left, 2=top-right, 3=bottom-left, 4=bottom-right, 5=all on
+const uint32_t CAL_TOP_LEFT[3]     = { 0x80000000, 0x00000000, 0x00000000 };
+const uint32_t CAL_TOP_RIGHT[3]    = { 0x00100000, 0x00000000, 0x00000000 };
+const uint32_t CAL_BOTTOM_LEFT[3]  = { 0x00000000, 0x00000000, 0x00000800 };
+const uint32_t CAL_BOTTOM_RIGHT[3] = { 0x00000000, 0x00000000, 0x00000001 };
 
 /* ==================== SENSOR ==================== */
 int16_t gx, gy, gz;
@@ -70,13 +84,32 @@ void setup() {
   matrix.begin();
   matrix.loadFrame(FRAME_OFF);
 
+#if !CALIBRATE
   connectWiFi();
-
   Serial.println("✅ Tremor Monitoring Started (Batch Mode)");
+#else
+  Serial.println("=== LED CALIBRATION MODE ===");
+  Serial.println("Watch the matrix. Each step lights ONE corner or all.");
+  Serial.println("Report: which physical position lights for step 1,2,3,4?");
+#endif
 }
 
 /* ==================== LOOP ==================== */
 void loop() {
+#if CALIBRATE
+  // Cycle: 1=top-left, 2=top-right, 3=bottom-left, 4=bottom-right, 5=all on
+  static int step = 0;
+  const int steps = 5;
+  const uint32_t* frames[] = { CAL_TOP_LEFT, CAL_TOP_RIGHT, CAL_BOTTOM_LEFT, CAL_BOTTOM_RIGHT, FRAME_INTENSE };
+  const char* names[] = { "1: TOP-LEFT (row0 col0)", "2: TOP-RIGHT (row0 col11)", "3: BOTTOM-LEFT (row7 col0)", "4: BOTTOM-RIGHT (row7 col11)", "5: ALL ON" };
+
+  matrix.loadFrame(frames[step]);
+  Serial.println(names[step]);
+  step = (step + 1) % steps;
+  delay(2000);
+  return;
+#endif
+
   readMPU6050();
   readVibrationSensor();
 
@@ -187,6 +220,9 @@ void bufferLog(const char* severity) {
 
 /* ==================== SUPABASE ==================== */
 bool sendBatchToSupabase() {
+  // Show "SEND" on built-in LED matrix while sending
+  matrix.loadFrame(FRAME_SEND);
+
   if (!sslClient.connect(SUPABASE_HOST, 443)) {
     Serial.println("❌ Supabase TLS failed");
     return false;
