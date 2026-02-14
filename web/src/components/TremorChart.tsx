@@ -43,7 +43,7 @@ export default function TremorChart() {
       
       // First, try without date filter to see if we can access any data
       console.log("🔍 Testing table access first...");
-      const { data: testData, error: testError, count: testCount } = await supabase
+      const { error: testError, count: testCount } = await supabase
         .from("arduino_logs")
         .select("id", { count: "exact", head: true })
         .limit(1);
