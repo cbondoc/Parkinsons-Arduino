@@ -16,11 +16,12 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  Legend,
 } from "recharts";
 import dayjs from "dayjs";
 import { ArduinoLog, supabase } from "../lib/supabaseClient";
 
-type ChartPoint = { t: string; value: number };
+type ChartPoint = { t: string; value: number; severity?: string };
 
 export default function TremorChart() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
@@ -59,7 +60,7 @@ export default function TremorChart() {
       // Live: order DESC so we get newest rows first (Supabase returns max 1000 per request)
       const { data, error, count } = await supabase
         .from("arduino_logs")
-        .select("created_at, gyro_mag", { count: "exact" })
+        .select("created_at, gyro_mag, severity", { count: "exact" })
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: mode === "history" })
         .limit(mode === "history" ? 20000 : 1000);
@@ -82,7 +83,7 @@ export default function TremorChart() {
         console.log("No data with date filter, fetching newest rows...");
         const { data: allData, error: allError } = await supabase
           .from("arduino_logs")
-          .select("created_at, gyro_mag")
+          .select("created_at, gyro_mag, severity")
           .order("created_at", { ascending: false })
           .limit(mode === "history" ? 20000 : 5000);
         
@@ -100,6 +101,7 @@ export default function TremorChart() {
           const pts = [...allData].reverse().map((r) => ({
             t: r.created_at,
             value: r.gyro_mag,
+            severity: r.severity,
           }));
           setPoints(pts);
           setError(null);
@@ -109,8 +111,8 @@ export default function TremorChart() {
       
       const raw = data ?? [];
       const pts = mode === "live"
-        ? [...raw].reverse().map((r) => ({ t: r.created_at, value: r.gyro_mag }))
-        : raw.map((r) => ({ t: r.created_at, value: r.gyro_mag }));
+        ? [...raw].reverse().map((r) => ({ t: r.created_at, value: r.gyro_mag, severity: r.severity }))
+        : raw.map((r) => ({ t: r.created_at, value: r.gyro_mag, severity: r.severity }));
       setPoints(pts);
       setError(null);
     };
@@ -132,6 +134,7 @@ export default function TremorChart() {
                 {
                   t: row.created_at,
                   value: row.gyro_mag,
+                  severity: row.severity,
                 },
               ].slice(-2000)
             );
@@ -161,7 +164,7 @@ export default function TremorChart() {
       // Order DESC to get newest rows first (Supabase returns max 1000 per request)
       const { data, error } = await supabase
         .from("arduino_logs")
-        .select("created_at, gyro_mag")
+        .select("created_at, gyro_mag, severity")
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: false })
         .limit(1000);
@@ -174,7 +177,7 @@ export default function TremorChart() {
       if (data && data.length >= 0) {
         // Reverse so chart is chronological; we now have newest 1000 in window
         setPoints(
-          [...data].reverse().map((d) => ({ t: d.created_at, value: d.gyro_mag }))
+          [...data].reverse().map((d) => ({ t: d.created_at, value: d.gyro_mag, severity: d.severity }))
         );
       }
     };
@@ -230,11 +233,18 @@ export default function TremorChart() {
       }
     }
 
+    // Use same thresholds as Arduino: intense >= 20000, mild in (0, 20000).
+    // Stored severity can be "NO TREMOR" when vibCount was 0 even if gyro was high,
+    // so derive triggers from magnitude so high values show as red/orange.
+    const INTENSE_THRESHOLD = 20000;
     return filtered
       .sort((a, b) => dayjs(a.t).valueOf() - dayjs(b.t).valueOf())
       .map((p) => ({
         time: dayjs(p.t).format(mode === "history" ? "MM-DD HH:mm" : "HH:mm:ss"),
         value: p.value,
+        mildTrigger:
+          p.value > 0 && p.value < INTENSE_THRESHOLD ? p.value : undefined,
+        intenseTrigger: p.value >= INTENSE_THRESHOLD ? p.value : undefined,
       }));
   }, [points, mode]);
 
@@ -280,12 +290,34 @@ export default function TremorChart() {
               <XAxis dataKey="time" minTickGap={30} />
               <YAxis />
               <Tooltip />
+              <Legend />
               <Line
                 type="monotone"
                 dataKey="value"
+                name="Gyro magnitude"
                 stroke="#1976d2"
                 dot={false}
                 strokeWidth={2}
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="mildTrigger"
+                name="Mild trigger"
+                stroke="#ed6c02"
+                strokeWidth={0}
+                dot={{ r: 5, fill: "#ed6c02", strokeWidth: 1, stroke: "#fff" }}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="intenseTrigger"
+                name="Intense trigger"
+                stroke="#d32f2f"
+                strokeWidth={0}
+                dot={{ r: 6, fill: "#d32f2f", strokeWidth: 1, stroke: "#fff" }}
+                connectNulls={false}
                 isAnimationActive={false}
               />
             </LineChart>
