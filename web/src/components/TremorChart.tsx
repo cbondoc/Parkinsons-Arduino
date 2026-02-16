@@ -254,6 +254,12 @@ export default function TremorChart() {
       }
     }
 
+    // Map gyro magnitude to 3 intensity levels (same threshold as Arduino: 20000)
+    const INTENSE_THRESHOLD = 20000;
+    const NO_TREMOR_CUTOFF = 1000; // below this = no tremor
+    const toIntensity = (value: number): 0 | 1 | 2 =>
+      value >= INTENSE_THRESHOLD ? 2 : value >= NO_TREMOR_CUTOFF ? 1 : 0;
+
     return filtered
       .sort((a, b) => dayjs(a.t).valueOf() - dayjs(b.t).valueOf())
       .map((p) => ({
@@ -261,8 +267,15 @@ export default function TremorChart() {
           mode === "history" ? "MM-DD HH:mm" : "HH:mm:ss",
         ),
         value: p.value,
+        intensity: toIntensity(p.value),
       }));
   }, [points, mode]);
+
+  const intensityLabels: Record<number, string> = {
+    0: "No tremor",
+    1: "Mild",
+    2: "Intense",
+  };
 
   return (
     <Card>
@@ -304,11 +317,24 @@ export default function TremorChart() {
             >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="time" minTickGap={30} />
-              <YAxis />
-              <Tooltip />
+              <YAxis
+                domain={[0, 2]}
+                ticks={[0, 1, 2]}
+                tickFormatter={(v) => intensityLabels[v] ?? ""}
+                width={80}
+              />
+              <Tooltip
+                formatter={(value: number, name: string) => {
+                  if (name === "intensity")
+                    return [intensityLabels[value as 0 | 1 | 2] ?? value, "Intensity"];
+                  return [value, name];
+                }}
+                labelFormatter={(label) => label}
+              />
               <Line
                 type="monotone"
-                dataKey="value"
+                dataKey="intensity"
+                name="Intensity"
                 stroke="#1976d2"
                 dot={false}
                 strokeWidth={2}
