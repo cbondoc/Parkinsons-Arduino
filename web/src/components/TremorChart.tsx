@@ -16,12 +16,11 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Legend,
 } from "recharts";
 import dayjs from "dayjs";
 import { ArduinoLog, supabase } from "../lib/supabaseClient";
 
-type ChartPoint = { t: string; value: number; severity?: string };
+type ChartPoint = { t: string; value: number };
 
 export default function TremorChart() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
@@ -35,32 +34,39 @@ export default function TremorChart() {
     const loadData = async () => {
       // For history mode, load last 3 months. For live mode, load last 30 minutes
       const timeWindow = mode === "history" ? 90 : 30; // days for history, minutes for live
-      const sinceIso = mode === "history" 
-        ? dayjs().subtract(timeWindow, "day").toISOString()
-        : dayjs().subtract(timeWindow, "minute").toISOString();
-      console.log(`📈 Chart querying >= (${timeWindow} ${mode === "history" ? "day" : "minute"} window):`, sinceIso);
+      const sinceIso =
+        mode === "history"
+          ? dayjs().subtract(timeWindow, "day").toISOString()
+          : dayjs().subtract(timeWindow, "minute").toISOString();
+      console.log(
+        `📈 Chart querying >= (${timeWindow} ${mode === "history" ? "day" : "minute"} window):`,
+        sinceIso,
+      );
       console.log(`📅 Current time:`, dayjs().toISOString());
-      console.log(`📅 Timezone:`, Intl.DateTimeFormat().resolvedOptions().timeZone);
-      
+      console.log(
+        `📅 Timezone:`,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      );
+
       // First, try without date filter to see if we can access any data
       console.log("🔍 Testing table access first...");
       const { error: testError, count: testCount } = await supabase
         .from("arduino_logs")
         .select("id", { count: "exact", head: true })
         .limit(1);
-      
+
       if (testError) {
         console.error("❌ Table access error:", testError);
         setError(`Cannot access table: ${testError.message}`);
         return;
       }
-      
+
       console.log(`📊 Table accessible. Total rows: ${testCount ?? "unknown"}`);
-      
+
       // Live: order DESC so we get newest rows first (Supabase returns max 1000 per request)
       const { data, error, count } = await supabase
         .from("arduino_logs")
-        .select("created_at, gyro_mag, severity", { count: "exact" })
+        .select("created_at, gyro_mag", { count: "exact" })
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: mode === "history" })
         .limit(mode === "history" ? 20000 : 1000);
@@ -75,44 +81,48 @@ export default function TremorChart() {
       }
       setError(null);
       console.log(
-        `📈 Chart data loaded: ${data?.length || 0} records (last ${timeWindow} ${mode === "history" ? "days" : "minutes"}), total in DB: ${count ?? "unknown"}`
+        `📈 Chart data loaded: ${data?.length || 0} records (last ${timeWindow} ${mode === "history" ? "days" : "minutes"}), total in DB: ${count ?? "unknown"}`,
       );
-      
+
       // If no data with date filter, try without date filter — fetch NEWEST rows first
       if (!data || data.length === 0) {
         console.log("No data with date filter, fetching newest rows...");
         const { data: allData, error: allError } = await supabase
           .from("arduino_logs")
-          .select("created_at, gyro_mag, severity")
+          .select("created_at, gyro_mag")
           .order("created_at", { ascending: false })
           .limit(mode === "history" ? 20000 : 5000);
-        
+
         if (!isMounted) return;
-        
+
         if (allError) {
           console.error("Error loading all data:", allError);
           setError(`Error loading data: ${allError.message}`);
           return;
         }
-        
-        console.log(`All data loaded: ${allData?.length || 0} records (newest first)`);
+
+        console.log(
+          `All data loaded: ${allData?.length || 0} records (newest first)`,
+        );
         if (allData && allData.length > 0) {
           // Reverse so chart has chronological order (oldest → newest)
           const pts = [...allData].reverse().map((r) => ({
             t: r.created_at,
             value: r.gyro_mag,
-            severity: r.severity,
           }));
           setPoints(pts);
           setError(null);
           return;
         }
       }
-      
+
       const raw = data ?? [];
-      const pts = mode === "live"
-        ? [...raw].reverse().map((r) => ({ t: r.created_at, value: r.gyro_mag, severity: r.severity }))
-        : raw.map((r) => ({ t: r.created_at, value: r.gyro_mag, severity: r.severity }));
+      const pts =
+        mode === "live"
+          ? [...raw]
+              .reverse()
+              .map((r) => ({ t: r.created_at, value: r.gyro_mag }))
+          : raw.map((r) => ({ t: r.created_at, value: r.gyro_mag }));
       setPoints(pts);
       setError(null);
     };
@@ -134,11 +144,10 @@ export default function TremorChart() {
                 {
                   t: row.created_at,
                   value: row.gyro_mag,
-                  severity: row.severity,
                 },
-              ].slice(-2000)
+              ].slice(-2000),
             );
-          }
+          },
         )
         .subscribe();
 
@@ -164,7 +173,7 @@ export default function TremorChart() {
       // Order DESC to get newest rows first (Supabase returns max 1000 per request)
       const { data, error } = await supabase
         .from("arduino_logs")
-        .select("created_at, gyro_mag, severity")
+        .select("created_at, gyro_mag")
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: false })
         .limit(1000);
@@ -177,7 +186,9 @@ export default function TremorChart() {
       if (data && data.length >= 0) {
         // Reverse so chart is chronological; we now have newest 1000 in window
         setPoints(
-          [...data].reverse().map((d) => ({ t: d.created_at, value: d.gyro_mag, severity: d.severity }))
+          [...data]
+            .reverse()
+            .map((d) => ({ t: d.created_at, value: d.gyro_mag })),
         );
       }
     };
@@ -194,9 +205,7 @@ export default function TremorChart() {
     // For live mode: show last 30 minutes (expanded from 10 to catch more data)
     // For history mode: show all loaded data (up to 90 days)
     const windowStart =
-      mode === "live" 
-        ? now.subtract(30, "minute") 
-        : now.subtract(90, "day"); // Show up to 90 days for history (covers all loaded data)
+      mode === "live" ? now.subtract(30, "minute") : now.subtract(90, "day"); // Show up to 90 days for history (covers all loaded data)
 
     const filtered = points.filter((p) => {
       const pointTime = dayjs(p.t);
@@ -220,31 +229,38 @@ export default function TremorChart() {
     if (points.length > 0) {
       const firstPoint = dayjs(points[0].t);
       const lastPoint = dayjs(points[points.length - 1].t);
-      console.log(`  First point: ${firstPoint.format()} (${firstPoint.valueOf()})`);
-      console.log(`  Last point: ${lastPoint.format()} (${lastPoint.valueOf()})`);
-      console.log(`  Window start: ${windowStart.valueOf()}, Window end: ${now.valueOf()}`);
+      console.log(
+        `  First point: ${firstPoint.format()} (${firstPoint.valueOf()})`,
+      );
+      console.log(
+        `  Last point: ${lastPoint.format()} (${lastPoint.valueOf()})`,
+      );
+      console.log(
+        `  Window start: ${windowStart.valueOf()}, Window end: ${now.valueOf()}`,
+      );
       if (mode === "live" && filtered.length === 0 && points.length > 0) {
         // Show why points are being filtered out
         const samplePoint = points[Math.floor(points.length / 2)];
         const sampleTime = dayjs(samplePoint.t);
-        console.warn(`  Sample point time: ${sampleTime.format()} (${sampleTime.valueOf()})`);
-        console.warn(`  Is after window start? ${sampleTime.valueOf() >= windowStart.valueOf()}`);
-        console.warn(`  Is before now? ${sampleTime.valueOf() <= now.valueOf()}`);
+        console.warn(
+          `  Sample point time: ${sampleTime.format()} (${sampleTime.valueOf()})`,
+        );
+        console.warn(
+          `  Is after window start? ${sampleTime.valueOf() >= windowStart.valueOf()}`,
+        );
+        console.warn(
+          `  Is before now? ${sampleTime.valueOf() <= now.valueOf()}`,
+        );
       }
     }
 
-    // Use same thresholds as Arduino: intense >= 20000, mild in (0, 20000).
-    // Stored severity can be "NO TREMOR" when vibCount was 0 even if gyro was high,
-    // so derive triggers from magnitude so high values show as red/orange.
-    const INTENSE_THRESHOLD = 20000;
     return filtered
       .sort((a, b) => dayjs(a.t).valueOf() - dayjs(b.t).valueOf())
       .map((p) => ({
-        time: dayjs(p.t).format(mode === "history" ? "MM-DD HH:mm" : "HH:mm:ss"),
+        time: dayjs(p.t).format(
+          mode === "history" ? "MM-DD HH:mm" : "HH:mm:ss",
+        ),
         value: p.value,
-        mildTrigger:
-          p.value > 0 && p.value < INTENSE_THRESHOLD ? p.value : undefined,
-        intenseTrigger: p.value >= INTENSE_THRESHOLD ? p.value : undefined,
       }));
   }, [points, mode]);
 
@@ -256,8 +272,8 @@ export default function TremorChart() {
           data.length > 0
             ? `Showing ${data.length} points (${points.length} total loaded)`
             : points.length > 0
-            ? `No data in selected time window (${points.length} total loaded)`
-            : "No data - loading..."
+              ? `No data in selected time window (${points.length} total loaded)`
+              : "No data - loading..."
         }
         action={
           <ToggleButtonGroup
@@ -290,34 +306,12 @@ export default function TremorChart() {
               <XAxis dataKey="time" minTickGap={30} />
               <YAxis />
               <Tooltip />
-              <Legend />
               <Line
                 type="monotone"
                 dataKey="value"
-                name="Gyro magnitude"
                 stroke="#1976d2"
                 dot={false}
                 strokeWidth={2}
-                isAnimationActive={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="mildTrigger"
-                name="Mild trigger"
-                stroke="#ed6c02"
-                strokeWidth={0}
-                dot={{ r: 5, fill: "#ed6c02", strokeWidth: 1, stroke: "#fff" }}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="intenseTrigger"
-                name="Intense trigger"
-                stroke="#d32f2f"
-                strokeWidth={0}
-                dot={{ r: 6, fill: "#d32f2f", strokeWidth: 1, stroke: "#fff" }}
-                connectNulls={false}
                 isAnimationActive={false}
               />
             </LineChart>
