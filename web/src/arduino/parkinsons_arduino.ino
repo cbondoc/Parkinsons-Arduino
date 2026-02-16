@@ -63,6 +63,23 @@ int logCount = 0;
 unsigned long lastSend = 0;
 const unsigned long SEND_INTERVAL = 5000;
 
+/* ==================== NON-BLOCKING SEND STATE ==================== */
+enum SendState {
+  SEND_IDLE,
+  SEND_CONNECTING,
+  SEND_WRITING,
+  SEND_READING,
+  SEND_DONE
+};
+SendState sendState = SEND_IDLE;
+String sendPayload;           // built once when send starts
+int sendLogCount = 0;         // snapshot size we're sending
+LogEntry sendLogs[MAX_LOGS];  // snapshot so main buffer can keep filling
+unsigned int sendReadPos = 0; // for detecting "201" in response
+bool sendSaw201 = false;
+const unsigned long SEND_READ_TIMEOUT_MS = 15000;
+unsigned long sendReadStart = 0;
+
 /* ==================== SETUP ==================== */
 void setup() {
   Serial.begin(115200);
@@ -116,15 +133,8 @@ void loop() {
   const char* severity = classifyAndDisplay();
   bufferLog(severity);
 
-  // Send batch every 5 seconds
-  if (millis() - lastSend >= SEND_INTERVAL) {
-    if (logCount > 0) {
-      if (sendBatchToSupabase()) {
-        logCount = 0; // clear buffer only after success
-        lastSend = millis();
-      }
-    }
-  }
+  // Non-blocking send: tick each loop; starts a new batch when interval elapsed
+  sendBatchToSupabaseNonBlocking();
 
   delay(20); // ~50Hz
 }
@@ -218,57 +228,108 @@ void bufferLog(const char* severity) {
   }
 }
 
-/* ==================== SUPABASE ==================== */
-bool sendBatchToSupabase() {
-  // Show "SEND" on built-in LED matrix while sending
-  matrix.loadFrame(FRAME_SEND);
-
-  if (!sslClient.connect(SUPABASE_HOST, 443)) {
-    Serial.println("❌ Supabase TLS failed");
-    return false;
+/* ==================== SUPABASE (non-blocking) ==================== */
+void sendBatchToSupabaseNonBlocking() {
+  // ----- Start a new batch when idle and interval elapsed -----
+  if (sendState == SEND_IDLE) {
+    if (millis() - lastSend < SEND_INTERVAL) return;
+    if (logCount <= 0) {
+      lastSend = millis();
+      return;
+    }
+    // Snapshot current buffer so we can keep logging while sending
+    sendLogCount = logCount;
+    for (int i = 0; i < sendLogCount; i++) sendLogs[i] = logs[i];
+    sendPayload = "[";
+    for (int i = 0; i < sendLogCount; i++) {
+      sendPayload += "{";
+      sendPayload += "\"gyro_mag\":" + String(sendLogs[i].gyro, 2) + ",";
+      sendPayload += "\"vib_count\":" + String(sendLogs[i].vib) + ",";
+      sendPayload += "\"severity\":\"" + String(sendLogs[i].severity) + "\"";
+      sendPayload += "}";
+      if (i < sendLogCount - 1) sendPayload += ",";
+    }
+    sendPayload += "]";
+    sendState = SEND_CONNECTING;
+    sendSaw201 = false;
+    sendReadPos = 0;
+    matrix.loadFrame(FRAME_SEND);
+    Serial.print("📡 Sending batch (background): ");
+    Serial.println(sendLogCount);
   }
 
-  Serial.print("📡 Sending batch: ");
-  Serial.println(logCount);
-
-  String payload = "[";
-  for (int i = 0; i < logCount; i++) {
-    payload += "{";
-    payload += "\"gyro_mag\":" + String(logs[i].gyro, 2) + ",";
-    payload += "\"vib_count\":" + String(logs[i].vib) + ",";
-    payload += "\"severity\":\"" + String(logs[i].severity) + "\"";
-    payload += "}";
-    if (i < logCount - 1) payload += ",";
-  }
-  payload += "]";
-
-  sslClient.println("POST " + String(SUPABASE_PATH) + " HTTP/1.1");
-  sslClient.println("Host: " + String(SUPABASE_HOST));
-  sslClient.println("apikey: " + String(SUPABASE_API_KEY));
-  sslClient.println("Authorization: Bearer " + String(SUPABASE_API_KEY));
-  sslClient.println("Content-Type: application/json");
-  sslClient.println("Prefer: return=minimal");
-  sslClient.print("Content-Length: ");
-  sslClient.println(payload.length());
-  sslClient.println();
-  sslClient.println(payload);
-
-  int status = 0;
-  while (sslClient.connected()) {
-    while (sslClient.available()) {
-      char c = sslClient.read();
-      Serial.write(c);
-      if (c == '2') status = 201;
+  // ----- CONNECTING (may block once per batch; rest is non-blocking) -----
+  if (sendState == SEND_CONNECTING) {
+    if (sslClient.connect(SUPABASE_HOST, 443)) {
+      sendState = SEND_WRITING;
+    } else {
+      Serial.println("❌ Supabase TLS failed");
+      sslClient.stop();
+      sendState = SEND_IDLE;
+      lastSend = millis();
+      return;
     }
   }
 
-  sslClient.stop();
+  // ----- WRITING: send request in one go (buffered, usually fast) -----
+  if (sendState == SEND_WRITING) {
+    sslClient.println("POST " + String(SUPABASE_PATH) + " HTTP/1.1");
+    sslClient.println("Host: " + String(SUPABASE_HOST));
+    sslClient.println("apikey: " + String(SUPABASE_API_KEY));
+    sslClient.println("Authorization: Bearer " + String(SUPABASE_API_KEY));
+    sslClient.println("Content-Type: application/json");
+    sslClient.println("Prefer: return=minimal");
+    sslClient.print("Content-Length: ");
+    sslClient.println(sendPayload.length());
+    sslClient.println();
+    sslClient.print(sendPayload);
+    sendState = SEND_READING;
+    sendReadStart = millis();
+    return;
+  }
 
-  if (status == 201) {
-    Serial.println("\n✅ Batch stored successfully");
-    return true;
-  } else {
-    Serial.println("\n❌ Batch failed — retained for retry");
-    return false;
+  // ----- READING: consume a chunk per loop (non-blocking) -----
+  if (sendState == SEND_READING) {
+    if (millis() - sendReadStart > SEND_READ_TIMEOUT_MS) {
+      Serial.println("\n❌ Supabase read timeout — retained for retry");
+      sslClient.stop();
+      sendState = SEND_IDLE;
+      lastSend = millis();
+      return;
+    }
+    const int maxReadPerLoop = 64;
+    int n = 0;
+    while (sslClient.available() && n < maxReadPerLoop) {
+      char c = sslClient.read();
+      Serial.write(c);
+      if (c == '2') sendReadPos = 1;
+      else if (sendReadPos == 1 && c == '0') sendReadPos = 2;
+      else if (sendReadPos == 2 && c == '1') sendSaw201 = true;
+      else sendReadPos = 0;
+      n++;
+    }
+    if (!sslClient.connected() && !sslClient.available()) {
+      sslClient.stop();
+      sendState = SEND_DONE;
+    }
+    return;
+  }
+
+  // ----- DONE: clear sent logs and reset -----
+  if (sendState == SEND_DONE) {
+    if (sendSaw201) {
+      Serial.println("\n✅ Batch stored successfully");
+      int keep = logCount - sendLogCount;
+      if (keep > 0) {
+        for (int i = 0; i < keep; i++) logs[i] = logs[sendLogCount + i];
+        logCount = keep;
+      } else {
+        logCount = 0;
+      }
+    } else {
+      Serial.println("\n❌ Batch failed — retained for retry");
+    }
+    lastSend = millis();
+    sendState = SEND_IDLE;
   }
 }
