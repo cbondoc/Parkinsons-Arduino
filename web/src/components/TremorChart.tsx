@@ -32,14 +32,14 @@ export default function TremorChart() {
     let isMounted = true;
 
     const loadData = async () => {
-      // For history mode, load last 3 months. For live mode, load last 30 minutes
-      const timeWindow = mode === "history" ? 90 : 30; // days for history, minutes for live
+      // For history mode, load last 1 month. For live mode, load last 30 minutes
+      const timeWindow = mode === "history" ? 1 : 30; // months for history, minutes for live
       const sinceIso =
         mode === "history"
-          ? dayjs().subtract(timeWindow, "day").toISOString()
+          ? dayjs().subtract(timeWindow, "month").toISOString()
           : dayjs().subtract(timeWindow, "minute").toISOString();
       console.log(
-        `📈 Chart querying >= (${timeWindow} ${mode === "history" ? "day" : "minute"} window):`,
+        `📈 Chart querying >= (${timeWindow} ${mode === "history" ? "month" : "minute"} window):`,
         sinceIso,
       );
       console.log(`📅 Current time:`, dayjs().toISOString());
@@ -81,7 +81,7 @@ export default function TremorChart() {
       }
       setError(null);
       console.log(
-        `📈 Chart data loaded: ${data?.length || 0} records (last ${timeWindow} ${mode === "history" ? "days" : "minutes"}), total in DB: ${count ?? "unknown"}`,
+        `📈 Chart data loaded: ${data?.length || 0} records (last ${timeWindow} ${mode === "history" ? "months" : "minutes"}), total in DB: ${count ?? "unknown"}`,
       );
 
       // If no data with date filter, try without date filter — fetch NEWEST rows first
@@ -202,17 +202,19 @@ export default function TremorChart() {
 
   const data = useMemo(() => {
     const now = dayjs();
-    // For live mode: show last 30 minutes (expanded from 10 to catch more data)
-    // For history mode: show all loaded data (up to 90 days)
+    // For live mode: show last 30 minutes. For history mode: show all loaded data (up to 1 month)
     const windowStart =
-      mode === "live" ? now.subtract(30, "minute") : now.subtract(90, "day"); // Show up to 90 days for history (covers all loaded data)
+      mode === "live" ? now.subtract(30, "minute") : now.subtract(1, "month");
 
     const filtered = points.filter((p) => {
       const pointTime = dayjs(p.t);
-      // For history, show all data that's not in the future
+      // For history, only show data within the 1-month window (and not in the future)
       // For live, only show recent data (within the window)
       if (mode === "history") {
-        return pointTime.isBefore(now) || pointTime.isSame(now);
+        const inWindow =
+          pointTime.valueOf() >= windowStart.valueOf() &&
+          (pointTime.isBefore(now) || pointTime.isSame(now));
+        return inWindow;
       } else {
         // Include data from windowStart to now (inclusive)
         // Use valueOf() for more reliable comparison
@@ -262,14 +264,23 @@ export default function TremorChart() {
 
     return filtered
       .sort((a, b) => dayjs(a.t).valueOf() - dayjs(b.t).valueOf())
-      .map((p) => ({
-        time: dayjs(p.t).format(
-          mode === "history" ? "MM-DD HH:mm" : "HH:mm:ss",
-        ),
-        value: p.value,
-        intensity: toIntensity(p.value),
-      }));
+      .map((p) => {
+        const d = dayjs(p.t);
+        return {
+          time: d.format(mode === "history" ? "MM-DD HH:mm" : "HH:mm:ss"),
+          timestamp: d.valueOf(),
+          value: p.value,
+          intensity: toIntensity(p.value),
+        };
+      });
   }, [points, mode]);
+
+  // For history mode, fix X-axis to full 1-month window so axis always spans 1 month
+  const now = dayjs();
+  const historyWindowStart = now.subtract(1, "month").valueOf();
+  const historyWindowEnd = now.valueOf();
+  const xAxisDomain =
+    mode === "history" ? [historyWindowStart, historyWindowEnd] : undefined;
 
   const intensityLabels: Record<number, string> = {
     0: "No tremor",
@@ -299,7 +310,7 @@ export default function TremorChart() {
             }}
           >
             <ToggleButton value="live">Live (30m)</ToggleButton>
-            <ToggleButton value="history">History (90d)</ToggleButton>
+            <ToggleButton value="history">History (1mo)</ToggleButton>
           </ToggleButtonGroup>
         }
       />
@@ -316,7 +327,17 @@ export default function TremorChart() {
               margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" minTickGap={30} />
+              <XAxis
+                dataKey={mode === "history" ? "timestamp" : "time"}
+                type={mode === "history" ? "number" : "category"}
+                domain={xAxisDomain}
+                minTickGap={30}
+                tickFormatter={
+                  mode === "history"
+                    ? (ts: number) => dayjs(ts).format("MM/DD")
+                    : undefined
+                }
+              />
               <YAxis
                 domain={[0, 2]}
                 ticks={[0, 1, 2]}
@@ -329,7 +350,11 @@ export default function TremorChart() {
                     return [intensityLabels[value as 0 | 1 | 2] ?? value, "Intensity"];
                   return [value, name];
                 }}
-                labelFormatter={(label) => label}
+                labelFormatter={(label) =>
+                  typeof label === "number"
+                    ? dayjs(label).format("YYYY-MM-DD HH:mm")
+                    : String(label)
+                }
               />
               <Line
                 type="monotone"
