@@ -43,7 +43,17 @@ const uint32_t CAL_BOTTOM_RIGHT[3] = { 0x00000000, 0x00000000, 0x00000001 };
 
 /* ==================== SENSOR ==================== */
 int16_t gx, gy, gz;
-float gyroMag = 0;
+float gyroMag = 0;  // magnitude = sqrt(gx²+gy²+gz²), raw units ~0 to ~56756
+
+/* ==================== SEVERITY RANGES (sensor → severity) ====================
+ *  Gyro:   gyroMag (float) — rotation magnitude from MPU6050 raw 16-bit values.
+ *  Vib:    vibCount (int)  — number of HIGH readings on VIB_PIN in last 1 second.
+ *
+ *  NO TREMOR:      vibCount == 0              (gyro ignored)
+ *  MILD TREMOR:    vibCount >= 1  AND gyroMag < GYRO_INTENSE_THRESHOLD
+ *  INTENSE TREMOR: vibCount >= 1  AND gyroMag >= GYRO_INTENSE_THRESHOLD
+ * ============================================================================ */
+#define GYRO_INTENSE_THRESHOLD 20000
 
 /* ==================== VIBRATION ==================== */
 int vibCount = 0;
@@ -193,7 +203,7 @@ const char* classifyAndDisplay() {
     return "NO TREMOR";
   }
 
-  if (gyroMag < 20000) {
+  if (gyroMag < GYRO_INTENSE_THRESHOLD) {
     digitalWrite(BUZZER_PIN, LOW);
 
     if (millis() - lastBlink > 600) {
