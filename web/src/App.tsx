@@ -71,7 +71,7 @@ export default function App() {
       <AppBar position="sticky" color="default" enableColorOnDark>
         <Toolbar>
           <Typography variant="h6" sx={{ mr: 2 }}>
-            Tremor Monitor
+            Parkinsons Disease Monitoring System
           </Typography>
           <Stack direction="row" spacing={0.5} sx={{ flexGrow: 1 }}>
             <Link component={NavLink} to="/" sx={navLinkSx}>
