@@ -17,6 +17,7 @@ import { Alert } from "@mui/material";
 import TremorChart from "./components/TremorChart";
 import TremorTable from "./components/TremorTable";
 import SuggestionsPage from "./components/SuggestionsPage";
+import SummaryPage from "./components/SummaryPage";
 
 const navLinkSx = {
   color: "inherit",
@@ -68,7 +69,7 @@ export default function App() {
 
   return (
     <>
-      <AppBar position="sticky" color="default" enableColorOnDark>
+      <AppBar position="sticky" color="default" enableColorOnDark className="print-hide">
         <Toolbar>
           <Typography variant="h6" sx={{ mr: 2 }}>
             Tremor Evaluation Platform
@@ -79,6 +80,9 @@ export default function App() {
             </Link>
             <Link component={NavLink} to="/suggestions" sx={navLinkSx}>
               Suggestions
+            </Link>
+            <Link component={NavLink} to="/summary" sx={navLinkSx}>
+              Summary
             </Link>
           </Stack>
           <IconButton
@@ -115,6 +119,7 @@ export default function App() {
               }
             />
             <Route path="/suggestions" element={<SuggestionsPage />} />
+            <Route path="/summary" element={<SummaryPage />} />
           </Routes>
           {location.pathname === "/suggestions" && (
             <Box sx={{ pt: 3, pb: 4 }} />

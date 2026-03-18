@@ -17,3 +17,39 @@ body,
 body {
   margin: 0;
 }
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+  }
+
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Let the report use full page width in print */
+  .MuiContainer-root {
+    max-width: none !important;
+  }
+
+  /* Avoid awkward page breaks inside cards/tables */
+  .MuiCard-root,
+  table,
+  tr,
+  .MuiPaper-root {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
