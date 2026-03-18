@@ -183,7 +183,7 @@ export default function TremorTable() {
           )}
           {!loading && !error && rows.length === 0 && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              No data found. Make sure your Supabase environment variables are set and RLS policies allow read access.
+              No data found. Make sure your Supabase environment variables are set and RLS policies allow read accesss.
             </Alert>
           )}
           {!loading && rows.length > 0 && (
