@@ -18,6 +18,7 @@ import TremorChart from "./components/TremorChart";
 import TremorTable from "./components/TremorTable";
 import SuggestionsPage from "./components/SuggestionsPage";
 import SummaryPage from "./components/SummaryPage";
+import AiChatPage from "./components/AiChatPage";
 
 const navLinkSx = {
   color: "inherit",
@@ -84,6 +85,9 @@ export default function App() {
             <Link component={NavLink} to="/summary" sx={navLinkSx}>
               Summary
             </Link>
+            <Link component={NavLink} to="/ask-ai" sx={navLinkSx}>
+              Ask AI
+            </Link>
           </Stack>
           <IconButton
             color="inherit"
@@ -120,6 +124,7 @@ export default function App() {
             />
             <Route path="/suggestions" element={<SuggestionsPage />} />
             <Route path="/summary" element={<SummaryPage />} />
+            <Route path="/ask-ai" element={<AiChatPage />} />
           </Routes>
           {location.pathname === "/suggestions" && (
             <Box sx={{ pt: 3, pb: 4 }} />

@@ -24,7 +24,68 @@ Create `web/.env` with:
 ```
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
+VITE_AI_CHAT_ENDPOINT=...
 ```
+
+### AI chat (optional)
+
+The **Ask AI** page calls a server-side endpoint so API keys are never exposed in the browser.
+
+- Set `VITE_AI_CHAT_ENDPOINT` to a URL you control (example: a Supabase Edge Function, or a Vercel/Netlify serverless route).
+- The frontend will send:
+
+```json
+{
+  "messages": [{ "role": "system|user|assistant", "content": "..." }],
+  "context": { "totals": { "readings": 123 }, "patterns": { "peakHours": [] } }
+}
+```
+
+- Your endpoint must return:
+
+```json
+{ "reply": "..." }
+```
+
+#### Easiest setup: Supabase Edge Function + OpenAI
+
+1) Install Supabase CLI (Windows):
+
+```powershell
+winget install Supabase.CLI
+```
+
+2) Login and link your project:
+
+```powershell
+supabase login
+supabase link --project-ref <YOUR_PROJECT_REF>
+```
+
+3) Set secrets (server-side):
+
+```powershell
+supabase secrets set GEMINI_API_KEY=<YOUR_GEMINI_KEY>
+supabase secrets set GEMINI_MODEL=gemini-flash-latest
+```
+
+4) Deploy the Edge Function:
+
+```powershell
+supabase functions deploy ai-chat
+```
+
+5) Point the frontend at the function:
+
+- Your endpoint will be:
+  - `https://<YOUR_PROJECT_REF>.functions.supabase.co/ai-chat`
+- Add this to `web/.env`:
+
+```env
+VITE_AI_CHAT_ENDPOINT=https://<YOUR_PROJECT_REF>.functions.supabase.co/ai-chat
+```
+
+Then restart `npm run dev`.
 
 ## 3) Run locally
 
