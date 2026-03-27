@@ -411,7 +411,7 @@ export default function SuggestionsPage() {
   return (
     <Stack spacing={3}>
       <Typography variant="h5" sx={{ fontWeight: 600 }}>
-        Insights & suggestions
+      Recommendations
       </Typography>
       <Typography color="text.secondary">
         Based on the last 3 months of tremor data ({analysis.totalReadings} readings).
