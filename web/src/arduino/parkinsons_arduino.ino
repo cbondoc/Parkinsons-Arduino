@@ -10,8 +10,8 @@
 
 /* ==================== WIFI / SUPABASE ==================== */
 
-const char* WIFI_SSID = "bondoc_sala";
-const char* WIFI_PASS = "carybondoc1234";
+const char* WIFI_SSID = "parkinsons";
+const char* WIFI_PASS = "12345678";
 
 const char SUPABASE_HOST[] = "emnblgwvbearctiqlfwe.supabase.co";
 const char SUPABASE_API_KEY[] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbmJsZ3d2YmVhcmN0aXFsZndlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MTM3MDcsImV4cCI6MjA3NDI4OTcwN30.h0dJYX5Vk_353hqRT8a_lURfiWKEHqVWSk2leY9zMzY";
