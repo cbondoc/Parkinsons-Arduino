@@ -73,7 +73,7 @@ export default function App() {
       <AppBar position="sticky" color="default" enableColorOnDark className="print-hide">
         <Toolbar>
           <Typography variant="h6" sx={{ mr: 2 }}>
-            Tremor Evaluation Platform
+            Parkin
           </Typography>
           <Stack direction="row" spacing={0.5} sx={{ flexGrow: 1 }}>
             <Link component={NavLink} to="/" sx={navLinkSx}>

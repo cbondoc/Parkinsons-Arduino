@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
+import ReactMarkdown from "react-markdown";
 import { ArduinoLog, supabase } from "../lib/supabaseClient";
 
 type ChatRole = "user" | "assistant" | "system";
@@ -237,9 +238,11 @@ export default function AiChatPage() {
     abortRef.current = new AbortController();
 
     const systemPrompt =
-      "You are a helpful health assistant. You explain the tremor report in plain language, highlight patterns, and suggest what to ask a clinician. " +
-      "Do not diagnose. If asked for medical advice, recommend consulting a licensed clinician. " +
-      "Use the provided `context` summary as the only patient data.";
+      "You are a helpful assistant for questions about the user's tremor summary (from `context` only — do not invent data). " +
+      "Answer the user's question directly in a few short paragraphs or a small bullet list. Put the key facts first. " +
+      "Avoid long essays, multiple themed sections, and long numbered suggestion lists unless the user explicitly asks for breadth or doctor-prep ideas. " +
+      "Do not diagnose. For treatment or personal medical decisions, briefly say to consult a licensed clinician (one line is enough). " +
+      "Plain language; optional light Markdown (short headings or **labels**) only if it helps scanning.";
 
     const payload = {
       messages: [
@@ -376,21 +379,58 @@ export default function AiChatPage() {
 }
 
 function PaperMessage({ role, content }: { role: UiMessage["role"]; content: string }) {
+  const bubbleSx = {
+    maxWidth: "80ch",
+    px: 1.5,
+    py: 1,
+    borderRadius: 2,
+    border: "1px solid",
+    borderColor: role === "user" ? "primary.main" : "divider",
+    bgcolor: role === "user" ? "primary.main" : "background.paper",
+    color: role === "user" ? "primary.contrastText" : "text.primary",
+  } as const;
+
+  if (role === "user") {
+    return (
+      <Box sx={{ ...bubbleSx, whiteSpace: "pre-wrap" }}>
+        <Typography variant="body2">{content}</Typography>
+      </Box>
+    );
+  }
+
   return (
     <Box
       sx={{
-        maxWidth: "80ch",
-        px: 1.5,
-        py: 1,
-        borderRadius: 2,
-        border: "1px solid",
-        borderColor: role === "user" ? "primary.main" : "divider",
-        bgcolor: role === "user" ? "primary.main" : "background.paper",
-        color: role === "user" ? "primary.contrastText" : "text.primary",
-        whiteSpace: "pre-wrap",
+        ...bubbleSx,
+        "& p": {
+          typography: "body2",
+          m: 0,
+          mb: 1,
+          "&:last-child": { mb: 0 },
+        },
+        "& strong": { fontWeight: 650 },
+        "& h1, & h2, & h3, & h4": {
+          typography: "subtitle2",
+          fontWeight: 650,
+          m: 0,
+          mt: 1,
+          mb: 0.5,
+          "&:first-of-type": { mt: 0 },
+        },
+        "& ul, & ol": { m: 0, mb: 1, pl: 2.25, typography: "body2" },
+        "& li": { mb: 0.25 },
+        "& li:last-child": { mb: 0 },
+        "& code": {
+          fontFamily: "ui-monospace, monospace",
+          fontSize: "0.85em",
+          bgcolor: "action.hover",
+          px: 0.4,
+          py: 0.1,
+          borderRadius: 0.5,
+        },
       }}
     >
-      <Typography variant="body2">{content}</Typography>
+      <ReactMarkdown>{content}</ReactMarkdown>
     </Box>
   );
 }
