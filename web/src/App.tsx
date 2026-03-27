@@ -80,7 +80,7 @@ export default function App() {
               Monitor
             </Link>
             <Link component={NavLink} to="/suggestions" sx={navLinkSx}>
-              Suggestions
+             Recommendations
             </Link>
             <Link component={NavLink} to="/summary" sx={navLinkSx}>
               Summary
