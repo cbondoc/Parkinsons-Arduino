@@ -7,22 +7,26 @@ import {
   Card,
   CardContent,
   CardHeader,
-  Chip,
   CircularProgress,
   Divider,
   Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Typography,
 } from "@mui/material";
 import PrintIcon from "@mui/icons-material/Print";
 import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
-import TrendingUpIcon from "@mui/icons-material/TrendingUp";
-import ScheduleIcon from "@mui/icons-material/Schedule";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  Cell,
+} from "recharts";
 import { ArduinoLog, supabase } from "../lib/supabaseClient";
 
 type Severity = "NO TREMOR" | "MILD TREMOR" | "INTENSE TREMOR" | "Unknown";
@@ -61,7 +65,7 @@ function analyze(logs: ArduinoLog[]) {
   };
   const byHour: Record<number, number> = {};
   const byDay: Record<number, number> = {};
-  const byDate: Record<string, { mild: number; intense: number; total: number }> = {};
+  const byDateGyro: Record<string, number[]> = {};
 
   const gyroValues: number[] = [];
   const vibValues: number[] = [];
@@ -78,19 +82,24 @@ function analyze(logs: ArduinoLog[]) {
     byHour[hour] = (byHour[hour] || 0) + 1;
     byDay[day] = (byDay[day] || 0) + 1;
 
-    if (!byDate[dateKey]) byDate[dateKey] = { mild: 0, intense: 0, total: 0 };
-    byDate[dateKey].total += 1;
-    if (sev === "MILD TREMOR") byDate[dateKey].mild += 1;
-    if (sev === "INTENSE TREMOR") byDate[dateKey].intense += 1;
-
     const gm = (log as any).gyro_mag;
-    if (typeof gm === "number" && Number.isFinite(gm)) gyroValues.push(gm);
+    if (typeof gm === "number" && Number.isFinite(gm)) {
+      gyroValues.push(gm);
+      if (!byDateGyro[dateKey]) byDateGyro[dateKey] = [];
+      byDateGyro[dateKey].push(gm);
+    }
     const vc = (log as any).vib_count;
     if (typeof vc === "number" && Number.isFinite(vc)) vibValues.push(vc);
   }
 
   const totalReadings = logs.length;
-  const daysWithData = Object.keys(byDate).length || 1;
+  const byDateKeys = Object.keys(
+    logs.reduce<Record<string, true>>((acc, log) => {
+      acc[dayjs((log as any).created_at).format("YYYY-MM-DD")] = true;
+      return acc;
+    }, {}),
+  );
+  const daysWithData = byDateKeys.length || 1;
   const tremorReadings =
     bySeverity["MILD TREMOR"] + bySeverity["INTENSE TREMOR"];
   const intenseShare =
@@ -105,7 +114,7 @@ function analyze(logs: ArduinoLog[]) {
       label: `${Number(hour)}:00`,
     }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
+    .slice(0, 3);
 
   const peakDays = Object.entries(byDay)
     .map(([day, count]) => ({
@@ -114,7 +123,7 @@ function analyze(logs: ArduinoLog[]) {
       label: DAY_LABELS[Number(day)] ?? String(day),
     }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
+    .slice(0, 3);
 
   const consultReasons: string[] = [];
   if (intenseShare >= 25) consultReasons.push("≥ 25% of readings show intense tremor.");
@@ -122,6 +131,23 @@ function analyze(logs: ArduinoLog[]) {
   if (tremorEpisodesPerDay >= 50) consultReasons.push("Very frequent tremor readings overall (avg per day).");
   if (bySeverity["INTENSE TREMOR"] >= 20 && totalReadings >= 50)
     consultReasons.push("Recurring intense tremor detected over the selected period.");
+
+  const severityBarData: { name: string; n: number; fill: string }[] = [
+    { name: "No tremor", n: bySeverity["NO TREMOR"], fill: "#757575" },
+    { name: "Mild", n: bySeverity["MILD TREMOR"], fill: "#1976d2" },
+    { name: "Intense", n: bySeverity["INTENSE TREMOR"], fill: "#d32f2f" },
+  ];
+  if (bySeverity.Unknown > 0) {
+    severityBarData.push({ name: "Unknown", n: bySeverity.Unknown, fill: "#9e9e9e" });
+  }
+
+  const dailyGyroLine = Object.entries(byDateGyro)
+    .map(([date, arr]) => ({
+      date,
+      label: dayjs(date).format("M/D"),
+      avgGyro: arr.reduce((a, b) => a + b, 0) / arr.length,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   return {
     totalReadings,
@@ -133,6 +159,8 @@ function analyze(logs: ArduinoLog[]) {
     peakHours,
     peakDays,
     consultReasons,
+    severityBarData,
+    dailyGyroLine,
     gyro: {
       min: gyroValues.length ? Math.min(...gyroValues) : null,
       max: gyroValues.length ? Math.max(...gyroValues) : null,
@@ -200,18 +228,14 @@ export default function SummaryPage() {
     };
   }, [createdAtSorted]);
 
-  const recent = useMemo(() => {
-    return [...logs]
-      .sort((a, b) => dayjs((b as any).created_at).valueOf() - dayjs((a as any).created_at).valueOf())
-      .slice(0, 40);
+  const latestLog = useMemo(() => {
+    if (!logs.length) return null;
+    return [...logs].sort(
+      (a, b) => dayjs((b as any).created_at).valueOf() - dayjs((a as any).created_at).valueOf(),
+    )[0];
   }, [logs]);
 
-  const recentIntense = useMemo(() => {
-    return recent.filter((r) => toSeverity((r as any).severity) === "INTENSE TREMOR").slice(0, 10);
-  }, [recent]);
-
   const onPrint = () => {
-    // Browser print dialog supports "Save as PDF" on most systems.
     window.print();
   };
 
@@ -244,12 +268,35 @@ export default function SummaryPage() {
     );
   }
 
-  const { bySeverity, tremorEpisodesPerDay, intenseEpisodesPerDay, intenseShare, peakHours, peakDays, consultReasons } =
-    analysis;
+  const {
+    bySeverity,
+    tremorEpisodesPerDay,
+    intenseEpisodesPerDay,
+    intenseShare,
+    peakHours,
+    peakDays,
+    consultReasons,
+    severityBarData,
+    dailyGyroLine,
+  } = analysis;
+
+  const peaksLine = [
+    `Hours: ${peakHours.map((p) => `${p.label} (${p.count})`).join(", ")}`,
+    `Days: ${peakDays.map((p) => `${p.label} (${p.count})`).join(", ")}`,
+  ].join(" • ");
+
+  const chartWrapSx = {
+    width: "100%",
+    height: 200,
+    "@media print": { height: 120 },
+  } as const;
 
   return (
-    <Box sx={{ pt: 3, pb: 5 }} className="print-root">
-      <Stack spacing={2} sx={{ mb: 2 }}>
+    <Box
+      sx={{ pt: 2, pb: 3, "@media print": { pt: 0, pb: 0 } }}
+      className="print-root print-summary-sheet"
+    >
+      <Stack spacing={1.5} sx={{ mb: 1.5, "@media print": { mb: 1 } }}>
         <Stack
           direction="row"
           alignItems="flex-start"
@@ -258,188 +305,159 @@ export default function SummaryPage() {
           gap={1}
         >
           <Box>
-            <Typography variant="h4" sx={{ fontWeight: 750, lineHeight: 1.15 }}>
+            <Typography variant="h5" sx={{ fontWeight: 750, lineHeight: 1.2 }}>
               Patient tremor summary
             </Typography>
-            <Typography color="text.secondary">
-              Generated {dayjs().format("YYYY-MM-DD HH:mm")} • Data window: last 3 months
-              {range ? ` • Actual range: ${range.start.format("YYYY-MM-DD")} → ${range.end.format("YYYY-MM-DD")}` : ""}
+            <Typography variant="body2" color="text.secondary">
+              Generated {dayjs().format("YYYY-MM-DD HH:mm")} • Window: last 3 months
+              {range ? ` • Data: ${range.start.format("YYYY-MM-DD")} → ${range.end.format("YYYY-MM-DD")}` : ""}
             </Typography>
+            {latestLog && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                Latest reading: {dayjs((latestLog as any).created_at).format("YYYY-MM-DD HH:mm")} —{" "}
+                {toSeverity((latestLog as any).severity)}
+              </Typography>
+            )}
           </Box>
           <Stack direction="row" spacing={1} className="print-hide">
-            <Button variant="contained" startIcon={<PrintIcon />} onClick={onPrint}>
-              Print / Save as PDF
+            <Button size="small" variant="contained" startIcon={<PrintIcon />} onClick={onPrint}>
+              Print / PDF
             </Button>
           </Stack>
         </Stack>
         <Divider />
       </Stack>
 
-      <Stack spacing={3}>
-        <Card>
-          <CardHeader avatar={<LocalHospitalIcon color="primary" />} title="Clinical highlights" />
-          <CardContent>
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-              <Paper variant="outlined" sx={{ px: 2, py: 1.5, minWidth: 220 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Readings (total)
+      <Card>
+        <CardHeader
+          avatar={<LocalHospitalIcon color="primary" fontSize="small" />}
+          title="Summary"
+          titleTypographyProps={{ variant: "subtitle1", fontWeight: 650 }}
+          sx={{ pb: 0 }}
+        />
+        <CardContent sx={{ pt: 1 }}>
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} sx={{ mb: 1.5 }}>
+            {(
+              [
+                ["Readings", String(analysis.totalReadings)],
+                ["Days w/ data", String(analysis.daysWithData)],
+                ["Intense %", `${fmtNum(intenseShare, 1)}%`],
+                ["Tremor/day (avg)", fmtNum(tremorEpisodesPerDay, 1)],
+                ["Intense/day (avg)", fmtNum(intenseEpisodesPerDay, 1)],
+              ] as const
+            ).map(([label, val]) => (
+              <Paper
+                key={label}
+                variant="outlined"
+                className="summary-stat-paper"
+                sx={{ px: 1.25, py: 0.75, flex: "1 1 100px", minWidth: 88, maxWidth: { md: 140 } }}
+              >
+                <Typography variant="caption" color="text.secondary" display="block" lineHeight={1.2}>
+                  {label}
                 </Typography>
-                <Typography variant="h6">{analysis.totalReadings}</Typography>
-              </Paper>
-              <Paper variant="outlined" sx={{ px: 2, py: 1.5, minWidth: 220 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Days with data
+                <Typography variant="body1" fontWeight={650}>
+                  {val}
                 </Typography>
-                <Typography variant="h6">{analysis.daysWithData}</Typography>
               </Paper>
-              <Paper variant="outlined" sx={{ px: 2, py: 1.5, minWidth: 220 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Intense tremor share
-                </Typography>
-                <Typography variant="h6">{fmtNum(intenseShare, 1)}%</Typography>
-              </Paper>
-              <Paper variant="outlined" sx={{ px: 2, py: 1.5, minWidth: 220 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Tremor readings/day (avg)
-                </Typography>
-                <Typography variant="h6">{fmtNum(tremorEpisodesPerDay, 1)}</Typography>
-              </Paper>
-              <Paper variant="outlined" sx={{ px: 2, py: 1.5, minWidth: 220 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Intense readings/day (avg)
-                </Typography>
-                <Typography variant="h6">{fmtNum(intenseEpisodesPerDay, 1)}</Typography>
-              </Paper>
-            </Stack>
+            ))}
+          </Stack>
 
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              Severity breakdown
-            </Typography>
-            <Stack direction="row" spacing={1} sx={{ mt: 0.5 }} flexWrap="wrap">
-              <Chip label={`No tremor: ${bySeverity["NO TREMOR"]}`} size="small" />
-              <Chip label={`Mild: ${bySeverity["MILD TREMOR"]}`} size="small" color="primary" variant="outlined" />
-              <Chip label={`Intense: ${bySeverity["INTENSE TREMOR"]}`} size="small" color="error" variant="outlined" />
-              {bySeverity.Unknown > 0 && <Chip label={`Unknown: ${bySeverity.Unknown}`} size="small" variant="outlined" />}
-            </Stack>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+            Severity counts — No: {bySeverity["NO TREMOR"]} • Mild: {bySeverity["MILD TREMOR"]} • Intense:{" "}
+            {bySeverity["INTENSE TREMOR"]}
+            {bySeverity.Unknown > 0 ? ` • Unknown: ${bySeverity.Unknown}` : ""}
+          </Typography>
 
-            {consultReasons.length > 0 && (
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                <Typography fontWeight={650} sx={{ mb: 0.5 }}>
-                  Consider clinical review
-                </Typography>
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {consultReasons.map((r) => (
-                    <li key={r}>{r}</li>
-                  ))}
-                </ul>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader avatar={<TrendingUpIcon color="primary" />} title="Signal summary (gyro magnitude / vibration count)" />
-          <CardContent>
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-              <Paper variant="outlined" sx={{ px: 2, py: 1.5, minWidth: 260 }}>
-                <Typography variant="subtitle2">Gyro magnitude</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  min {fmtNum(analysis.gyro.min, 2)} • median {fmtNum(analysis.gyro.median, 2)} • mean{" "}
-                  {fmtNum(analysis.gyro.mean, 2)} • max {fmtNum(analysis.gyro.max, 2)}
-                </Typography>
-              </Paper>
-              <Paper variant="outlined" sx={{ px: 2, py: 1.5, minWidth: 260 }}>
-                <Typography variant="subtitle2">Vibration count</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  min {fmtNum(analysis.vib.min, 0)} • median {fmtNum(analysis.vib.median, 0)} • mean{" "}
-                  {fmtNum(analysis.vib.mean, 1)} • max {fmtNum(analysis.vib.max, 0)}
-                </Typography>
-              </Paper>
-            </Stack>
-            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1.5 }}>
-              Notes: values summarize the last 3 months of uploaded readings. Interpretation depends on device placement and sampling behavior.
-            </Typography>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader avatar={<ScheduleIcon color="primary" />} title="Temporal patterns" />
-          <CardContent>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Peak hours (by reading count)
-            </Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-              {peakHours.map((p) => (
-                <Chip key={p.hour} label={`${p.label} (${p.count})`} size="small" variant="outlined" />
-              ))}
-            </Stack>
-
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Peak days of week
-            </Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {peakDays.map((p) => (
-                <Chip key={p.day} label={`${p.label} (${p.count})`} size="small" variant="outlined" />
-              ))}
-            </Stack>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader title="Recent readings (most recent first)" subheader="Up to 40 most recent readings from the loaded window" />
-          <CardContent>
-            {recentIntense.length > 0 && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {recentIntense.length} intense tremor reading(s) appear in the most recent sample.
-              </Alert>
-            )}
-            <Box sx={{ overflowX: "auto" }}>
-              <Table size="small" aria-label="recent readings">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>Time</TableCell>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>Severity</TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                      Gyro mag
-                    </TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                      Vib count
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {recent.map((r) => {
-                    const sev = toSeverity((r as any).severity);
-                    const created = dayjs((r as any).created_at).format("YYYY-MM-DD HH:mm:ss");
-                    const gm = (r as any).gyro_mag;
-                    const vc = (r as any).vib_count;
-                    return (
-                      <TableRow key={(r as any).id}>
-                        <TableCell sx={{ whiteSpace: "nowrap" }}>{created}</TableCell>
-                        <TableCell sx={{ whiteSpace: "nowrap" }}>
-                          <Chip
-                            size="small"
-                            label={sev}
-                            color={sev === "INTENSE TREMOR" ? "error" : sev === "MILD TREMOR" ? "primary" : "default"}
-                            variant={sev === "NO TREMOR" ? "outlined" : "filled"}
-                          />
-                        </TableCell>
-                        <TableCell align="right">{typeof gm === "number" ? gm.toFixed(2) : "—"}</TableCell>
-                        <TableCell align="right">{typeof vc === "number" ? vc : "—"}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1.5}
+            sx={{ alignItems: "stretch", "@media print": { flexDirection: "row" } }}
+          >
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="caption" fontWeight={600} color="text.secondary">
+                Readings by severity
+              </Typography>
+              <Box className="summary-chart-wrap" sx={chartWrapSx}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={severityBarData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis width={36} tick={{ fontSize: 10 }} allowDecimals={false} />
+                    <Tooltip formatter={(v: number) => [v, "Readings"]} />
+                    <Bar dataKey="n" radius={[4, 4, 0, 0]} name="Readings">
+                      {severityBarData.map((entry, i) => (
+                        <Cell key={i} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </Box>
             </Box>
-          </CardContent>
-        </Card>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="caption" fontWeight={600} color="text.secondary">
+                Daily mean gyro magnitude
+              </Typography>
+              <Box className="summary-chart-wrap" sx={chartWrapSx}>
+                {dailyGyroLine.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dailyGyroLine} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={24} />
+                      <YAxis width={40} tick={{ fontSize: 10 }} domain={["auto", "auto"]} />
+                      <Tooltip
+                        formatter={(v: number) => [fmtNum(v, 2), "Avg gyro"]}
+                        labelFormatter={(_, p) => {
+                          const pl = p?.[0]?.payload as { date?: string } | undefined;
+                          return pl?.date ? dayjs(pl.date).format("YYYY-MM-DD") : "";
+                        }}
+                      />
+                      <Line type="monotone" dataKey="avgGyro" stroke="#2e7d32" strokeWidth={2} dot={false} name="Avg gyro" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <Box sx={{ display: "flex", alignItems: "center", height: "100%" }}>
+                    <Typography variant="caption" color="text.secondary">
+                      No gyro samples in this window.
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          </Stack>
 
-        <Typography variant="caption" color="text.secondary">
-          This report is generated from device-uploaded readings and is intended to support (not replace) clinical evaluation.
-        </Typography>
-      </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+            <strong>Signal (3 mo)</strong> — Gyro mag: min {fmtNum(analysis.gyro.min, 2)} • med{" "}
+            {fmtNum(analysis.gyro.median, 2)} • mean {fmtNum(analysis.gyro.mean, 2)} • max {fmtNum(analysis.gyro.max, 2)}
+            {" · "}
+            Vib count: min {fmtNum(analysis.vib.min, 0)} • med {fmtNum(analysis.vib.median, 0)} • mean{" "}
+            {fmtNum(analysis.vib.mean, 1)} • max {fmtNum(analysis.vib.max, 0)}
+          </Typography>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+            <strong>Peaks (by reading count)</strong> — {peaksLine}
+          </Typography>
+
+          {consultReasons.length > 0 && (
+            <Alert severity="warning" sx={{ mt: 1.5, py: 0.5, "@media print": { py: 0.25 } }}>
+              <Typography variant="body2" fontWeight={650} component="span" display="block" sx={{ mb: 0.25 }}>
+                Consider clinical review
+              </Typography>
+              <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                {consultReasons.map((r) => (
+                  <Typography component="li" variant="body2" key={r}>
+                    {r}
+                  </Typography>
+                ))}
+              </Box>
+            </Alert>
+          )}
+
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.25 }}>
+            Device-uploaded data; supports but does not replace clinical evaluation. Interpretation depends on placement
+            and sampling.
+          </Typography>
+        </CardContent>
+      </Card>
     </Box>
   );
 }
-

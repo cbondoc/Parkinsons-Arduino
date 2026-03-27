@@ -21,6 +21,7 @@ body {
 @media print {
   @page {
     margin: 12mm;
+    size: letter;
   }
 
   .print-hide {
@@ -51,5 +52,39 @@ body {
   .MuiPaper-root {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  /* One-page patient summary (short / letter bond) */
+  .print-summary-sheet {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .print-summary-sheet .MuiCard-root {
+    box-shadow: none !important;
+    border: 1px solid #e0e0e0;
+    margin-bottom: 6px !important;
+  }
+
+  .print-summary-sheet .MuiCardHeader-root {
+    padding: 8px 12px !important;
+  }
+
+  .print-summary-sheet .MuiCardContent-root {
+    padding: 8px 12px 10px !important;
+  }
+
+  .print-summary-sheet .summary-chart-wrap {
+    height: 120px !important;
+    min-height: 120px !important;
+  }
+
+  .print-summary-sheet .MuiTypography-h5 {
+    font-size: 1.15rem !important;
+  }
+
+  .print-summary-sheet .summary-stat-paper {
+    padding: 6px 10px !important;
+    min-width: 0 !important;
   }
 }
