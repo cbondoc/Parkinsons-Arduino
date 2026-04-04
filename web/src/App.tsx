@@ -2,6 +2,7 @@ import {
   AppBar,
   Box,
   Container,
+  Drawer,
   IconButton,
   Link,
   Stack,
@@ -9,8 +10,10 @@ import {
   Typography,
 } from "@mui/material";
 import Brightness4Icon from "@mui/icons-material/Brightness4";
-import { useContext, useEffect, useState } from "react";
-import { Routes, Route, NavLink, useLocation } from "react-router-dom";
+import CloseIcon from "@mui/icons-material/Close";
+import SettingsIcon from "@mui/icons-material/Settings";
+import { useCallback, useContext, useEffect, useState } from "react";
+import { Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { ColorModeContext } from "./theme/AppThemeProvider";
 import { supabase } from "./lib/supabaseClient";
 import { Alert } from "@mui/material";
@@ -32,13 +35,24 @@ const navLinkSx = {
   "&.active": { bgcolor: "action.selected", fontWeight: 600 },
 };
 
+function SettingsDeepLink({ onOpen }: { onOpen: () => void }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    onOpen();
+    navigate("/", { replace: true });
+  }, [navigate, onOpen]);
+  return null;
+}
+
 export default function App() {
   const { toggleColorMode } = useContext(ColorModeContext);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [notifAnchor, setNotifAnchor] = useState<HTMLElement | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const location = useLocation();
   const envOk = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
   const { notifications, dismiss, clearAll, refreshReminders } = useReminderNotifications(envOk);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
 
   useEffect(() => {
     const testConnection = async () => {
@@ -94,9 +108,6 @@ export default function App() {
             <Link component={NavLink} to="/ask-ai" sx={navLinkSx}>
               Ask AI
             </Link>
-            <Link component={NavLink} to="/settings" sx={navLinkSx}>
-              Settings
-            </Link>
           </Stack>
           <NotificationPanel
             anchorEl={notifAnchor}
@@ -107,6 +118,13 @@ export default function App() {
             onClearAll={clearAll}
             onToggle={(el) => setNotifAnchor((prev) => (prev ? null : el))}
           />
+          <IconButton
+            color="inherit"
+            onClick={openSettings}
+            aria-label="Open settings"
+          >
+            <SettingsIcon />
+          </IconButton>
           <IconButton
             color="inherit"
             onClick={toggleColorMode}
@@ -143,13 +161,51 @@ export default function App() {
             <Route path="/suggestions" element={<SuggestionsPage />} />
             <Route path="/summary" element={<SummaryPage />} />
             <Route path="/ask-ai" element={<AiChatPage />} />
-            <Route path="/settings" element={<SettingsPage onRemindersChanged={refreshReminders} />} />
+            <Route path="/settings" element={<SettingsDeepLink onOpen={openSettings} />} />
           </Routes>
           {location.pathname === "/suggestions" && (
             <Box sx={{ pt: 3, pb: 4 }} />
           )}
         </Box>
       </Container>
+      <Drawer
+        anchor="right"
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        PaperProps={{
+          sx: {
+            width: { xs: "100%", sm: 440 },
+            maxWidth: "100vw",
+          },
+        }}
+      >
+        <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{
+              px: 2,
+              py: 1.5,
+              borderBottom: 1,
+              borderColor: "divider",
+            }}
+          >
+            <Typography variant="h6" component="h2">
+              Settings
+            </Typography>
+            <IconButton onClick={() => setSettingsOpen(false)} aria-label="Close settings" edge="end">
+              <CloseIcon />
+            </IconButton>
+          </Stack>
+          <Box sx={{ flex: 1, overflow: "auto", px: 2, pt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Reminders appear in the bell menu when the schedule matches your device time.
+            </Typography>
+            <SettingsPage hideHeader onRemindersChanged={refreshReminders} />
+          </Box>
+        </Box>
+      </Drawer>
     </>
   );
 }

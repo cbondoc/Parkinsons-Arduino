@@ -49,9 +49,11 @@ const MONTHS = [
 
 type Props = {
   onRemindersChanged?: () => void;
+  /** When true, omit page title and intro (e.g. right drawer supplies its own header). */
+  hideHeader?: boolean;
 };
 
-export default function SettingsPage({ onRemindersChanged }: Props) {
+export default function SettingsPage({ onRemindersChanged, hideHeader = false }: Props) {
   const [list, setList] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -166,14 +168,18 @@ export default function SettingsPage({ onRemindersChanged }: Props) {
   };
 
   return (
-    <Stack spacing={3} sx={{ pt: 3, pb: 6 }}>
-      <Typography variant="h5" component="h1">
-        Settings
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        Create reminders for medication, exercise, or consultations. They appear in the bell menu when the schedule
-        matches your device time.
-      </Typography>
+    <Stack spacing={3} sx={{ pt: hideHeader ? 0 : 3, pb: hideHeader ? 2 : 6 }}>
+      {!hideHeader && (
+        <>
+          <Typography variant="h5" component="h1">
+            Settings
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Create reminders for medication, exercise, or consultations. They appear in the bell menu when the schedule
+            matches your device time.
+          </Typography>
+        </>
+      )}
 
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>
