@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Card,
   CardContent,
@@ -16,6 +16,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  Customized,
 } from "recharts";
 import dayjs from "dayjs";
 import { ArduinoLog, supabase } from "../lib/supabaseClient";
@@ -25,6 +26,58 @@ type ChartPoint = {
   value: number;
   severity: ArduinoLog["severity"] | null;
 };
+
+/** Stroke per intensity (0 no tremor, 1 mild, 2 intense) — matches Y-axis bands. */
+const INTENSITY_STROKE: Record<number, string> = {
+  0: "#1976d2",
+  1: "#f9a825",
+  2: "#d32f2f",
+};
+
+type LinePoint = { x: number; y: number; payload?: { intensity?: number } };
+
+/** Recharts only allows one stroke per Line; draw segment colors using computed points. */
+function IntensityColoredLineSegments(chartProps: {
+  formattedGraphicalItems?: Array<{
+    props: { points?: LinePoint[] };
+    item: { props: { dataKey?: string } };
+  }>;
+}) {
+  const items = chartProps.formattedGraphicalItems;
+  if (!items?.length) return null;
+  const lineEntry = items.find((it) => it.item?.props?.dataKey === "intensity");
+  const pts = lineEntry?.props?.points;
+  if (!pts?.length) return null;
+
+  const segments: ReactNode[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (
+      a.x !== +a.x ||
+      a.y !== +a.y ||
+      b.x !== +b.x ||
+      b.y !== +b.y
+    ) {
+      continue;
+    }
+    const intensity = a.payload?.intensity ?? 0;
+    const stroke = INTENSITY_STROKE[intensity] ?? "#757575";
+    segments.push(
+      <line
+        key={i}
+        x1={a.x}
+        y1={a.y}
+        x2={b.x}
+        y2={b.y}
+        stroke={stroke}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />,
+    );
+  }
+  return <g className="recharts-intensity-segments">{segments}</g>;
+}
 
 export default function TremorChart() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
@@ -387,14 +440,15 @@ export default function TremorChart() {
                 }
               />
               <Line
-                type="monotone"
+                type="linear"
                 dataKey="intensity"
                 name="Intensity"
-                stroke="#1976d2"
+                stroke="transparent"
                 dot={false}
                 strokeWidth={2}
                 isAnimationActive={false}
               />
+              <Customized component={IntensityColoredLineSegments} />
             </LineChart>
           </ResponsiveContainer>
         </Box>
