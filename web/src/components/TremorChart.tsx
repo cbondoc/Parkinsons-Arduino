@@ -20,7 +20,11 @@ import {
 import dayjs from "dayjs";
 import { ArduinoLog, supabase } from "../lib/supabaseClient";
 
-type ChartPoint = { t: string; value: number };
+type ChartPoint = {
+  t: string;
+  value: number;
+  severity: ArduinoLog["severity"] | null;
+};
 
 export default function TremorChart() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
@@ -66,7 +70,7 @@ export default function TremorChart() {
       // Live: order DESC so we get newest rows first (Supabase returns max 1000 per request)
       const { data, error, count } = await supabase
         .from("arduino_logs")
-        .select("created_at, gyro_mag", { count: "exact" })
+        .select("created_at, gyro_mag, severity", { count: "exact" })
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: mode === "history" })
         .limit(mode === "history" ? 20000 : 1000);
@@ -89,7 +93,7 @@ export default function TremorChart() {
         console.log("No data with date filter, fetching newest rows...");
         const { data: allData, error: allError } = await supabase
           .from("arduino_logs")
-          .select("created_at, gyro_mag")
+          .select("created_at, gyro_mag, severity")
           .order("created_at", { ascending: false })
           .limit(mode === "history" ? 20000 : 5000);
 
@@ -109,6 +113,7 @@ export default function TremorChart() {
           const pts = [...allData].reverse().map((r) => ({
             t: r.created_at,
             value: r.gyro_mag,
+            severity: r.severity ?? null,
           }));
           setPoints(pts);
           setError(null);
@@ -121,8 +126,16 @@ export default function TremorChart() {
         mode === "live"
           ? [...raw]
               .reverse()
-              .map((r) => ({ t: r.created_at, value: r.gyro_mag }))
-          : raw.map((r) => ({ t: r.created_at, value: r.gyro_mag }));
+              .map((r) => ({
+                t: r.created_at,
+                value: r.gyro_mag,
+                severity: r.severity ?? null,
+              }))
+          : raw.map((r) => ({
+              t: r.created_at,
+              value: r.gyro_mag,
+              severity: r.severity ?? null,
+            }));
       setPoints(pts);
       setError(null);
     };
@@ -144,6 +157,7 @@ export default function TremorChart() {
                 {
                   t: row.created_at,
                   value: row.gyro_mag,
+                  severity: row.severity ?? null,
                 },
               ].slice(-2000),
             );
@@ -173,7 +187,7 @@ export default function TremorChart() {
       // Order DESC to get newest rows first (Supabase returns max 1000 per request)
       const { data, error } = await supabase
         .from("arduino_logs")
-        .select("created_at, gyro_mag")
+        .select("created_at, gyro_mag, severity")
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: false })
         .limit(1000);
@@ -188,7 +202,11 @@ export default function TremorChart() {
         setPoints(
           [...data]
             .reverse()
-            .map((d) => ({ t: d.created_at, value: d.gyro_mag })),
+            .map((d) => ({
+              t: d.created_at,
+              value: d.gyro_mag,
+              severity: d.severity ?? null,
+            })),
         );
       }
     };
@@ -256,11 +274,23 @@ export default function TremorChart() {
       }
     }
 
-    // Map gyro magnitude to 3 intensity levels (same threshold as Arduino: 20000)
+    // Intensity from DB severity (matches firmware: NO TREMOR is vib==0, not low gyro).
     const INTENSE_THRESHOLD = 20000;
-    const NO_TREMOR_CUTOFF = 1000; // below this = no tremor
-    const toIntensity = (value: number): 0 | 1 | 2 =>
-      value >= INTENSE_THRESHOLD ? 2 : value >= NO_TREMOR_CUTOFF ? 1 : 0;
+    const NO_TREMOR_CUTOFF = 1000;
+    const toIntensity = (
+      gyroMag: number,
+      severity: ArduinoLog["severity"] | null,
+    ): 0 | 1 | 2 => {
+      if (severity === "NO TREMOR") return 0;
+      if (severity === "MILD TREMOR") return 1;
+      if (severity === "INTENSE TREMOR") return 2;
+      // Legacy rows without severity: infer from gyro only
+      return gyroMag >= INTENSE_THRESHOLD
+        ? 2
+        : gyroMag >= NO_TREMOR_CUTOFF
+          ? 1
+          : 0;
+    };
 
     return filtered
       .sort((a, b) => dayjs(a.t).valueOf() - dayjs(b.t).valueOf())
@@ -270,7 +300,7 @@ export default function TremorChart() {
           time: d.format(mode === "history" ? "MM-DD HH:mm" : "HH:mm:ss"),
           timestamp: d.valueOf(),
           value: p.value,
-          intensity: toIntensity(p.value),
+          intensity: toIntensity(p.value, p.severity),
         };
       });
   }, [points, mode]);
