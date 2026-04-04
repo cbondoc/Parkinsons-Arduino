@@ -19,6 +19,9 @@ import TremorTable from "./components/TremorTable";
 import SuggestionsPage from "./components/SuggestionsPage";
 import SummaryPage from "./components/SummaryPage";
 import AiChatPage from "./components/AiChatPage";
+import SettingsPage from "./components/SettingsPage";
+import NotificationPanel from "./components/NotificationPanel";
+import { useReminderNotifications } from "./hooks/useReminderNotifications";
 
 const navLinkSx = {
   color: "inherit",
@@ -32,7 +35,10 @@ const navLinkSx = {
 export default function App() {
   const { toggleColorMode } = useContext(ColorModeContext);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [notifAnchor, setNotifAnchor] = useState<HTMLElement | null>(null);
   const location = useLocation();
+  const envOk = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
+  const { notifications, dismiss, clearAll, refreshReminders } = useReminderNotifications(envOk);
 
   useEffect(() => {
     const testConnection = async () => {
@@ -88,7 +94,19 @@ export default function App() {
             <Link component={NavLink} to="/ask-ai" sx={navLinkSx}>
               Ask AI
             </Link>
+            <Link component={NavLink} to="/settings" sx={navLinkSx}>
+              Settings
+            </Link>
           </Stack>
+          <NotificationPanel
+            anchorEl={notifAnchor}
+            open={Boolean(notifAnchor)}
+            onClose={() => setNotifAnchor(null)}
+            notifications={notifications}
+            onDismiss={dismiss}
+            onClearAll={clearAll}
+            onToggle={(el) => setNotifAnchor((prev) => (prev ? null : el))}
+          />
           <IconButton
             color="inherit"
             onClick={toggleColorMode}
@@ -125,6 +143,7 @@ export default function App() {
             <Route path="/suggestions" element={<SuggestionsPage />} />
             <Route path="/summary" element={<SummaryPage />} />
             <Route path="/ask-ai" element={<AiChatPage />} />
+            <Route path="/settings" element={<SettingsPage onRemindersChanged={refreshReminders} />} />
           </Routes>
           {location.pathname === "/suggestions" && (
             <Box sx={{ pt: 3, pb: 4 }} />

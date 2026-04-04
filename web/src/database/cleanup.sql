@@ -19,6 +19,7 @@ $$;
 
 DROP TABLE IF EXISTS public.arduino_logs CASCADE;
 DROP TABLE IF EXISTS public.emg_readings CASCADE;
+DROP TABLE IF EXISTS public.reminders CASCADE;
 
 DROP INDEX IF EXISTS public.arduino_logs_created_at_idx;
 DROP INDEX IF EXISTS public.emg_readings_created_at_idx;

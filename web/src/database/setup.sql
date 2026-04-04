@@ -3,6 +3,7 @@
 -- Run after cleanup.sql (or on a new project). Creates:
 --   public.arduino_logs (tremor / gyro — matches Arduino + web app)
 --   public.emg_readings (EMG demo / README examples)
+--   public.reminders (Settings: medication / exercise / consultation)
 -- Seeds: Jan + Mar + Apr 1–4 2026 arduino_logs + rolling ~28m live-demo rows
 --   (no/mild/intense) + 2h EMG sample data.
 -- ============================================
@@ -69,6 +70,65 @@ CREATE POLICY "Insert EMG" ON public.emg_readings
   FOR INSERT
   TO anon
   WITH CHECK (true);
+
+-- ---------- reminders (Settings tab — medication / exercise / consultation) ----------
+CREATE TABLE public.reminders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('medication', 'exercise', 'consultation')),
+  recurrence TEXT NOT NULL CHECK (recurrence IN ('daily', 'weekly', 'monthly', 'yearly')),
+  all_day BOOLEAN NOT NULL DEFAULT false,
+  time_local TIME WITHOUT TIME ZONE,
+  weekday SMALLINT,
+  day_of_month SMALLINT,
+  month_of_year SMALLINT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT reminders_weekday_range CHECK (weekday IS NULL OR (weekday >= 0 AND weekday <= 6)),
+  CONSTRAINT reminders_day_of_month_range CHECK (day_of_month IS NULL OR (day_of_month >= 1 AND day_of_month <= 31)),
+  CONSTRAINT reminders_month_range CHECK (month_of_year IS NULL OR (month_of_year >= 1 AND month_of_year <= 12)),
+  CONSTRAINT reminders_weekly_has_weekday CHECK (recurrence <> 'weekly' OR weekday IS NOT NULL),
+  CONSTRAINT reminders_monthly_has_day CHECK (recurrence <> 'monthly' OR day_of_month IS NOT NULL),
+  CONSTRAINT reminders_yearly_has_month_day CHECK (
+    recurrence <> 'yearly' OR (month_of_year IS NOT NULL AND day_of_month IS NOT NULL)
+  ),
+  CONSTRAINT reminders_time_when_timed CHECK (all_day = true OR time_local IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS reminders_is_active_idx ON public.reminders (is_active);
+
+COMMENT ON TABLE public.reminders IS 'User reminders: category, recurrence (daily/weekly/monthly/yearly), all-day or local time.';
+
+ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow anon read reminders" ON public.reminders;
+CREATE POLICY "Allow anon read reminders"
+  ON public.reminders
+  FOR SELECT
+  TO anon
+  USING (true);
+
+DROP POLICY IF EXISTS "Allow anon insert reminders" ON public.reminders;
+CREATE POLICY "Allow anon insert reminders"
+  ON public.reminders
+  FOR INSERT
+  TO anon
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow anon update reminders" ON public.reminders;
+CREATE POLICY "Allow anon update reminders"
+  ON public.reminders
+  FOR UPDATE
+  TO anon
+  USING (true)
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow anon delete reminders" ON public.reminders;
+CREATE POLICY "Allow anon delete reminders"
+  ON public.reminders
+  FOR DELETE
+  TO anon
+  USING (true);
 
 -- ---------- Retention: EMG rows older than 1 month, daily 00:10 UTC ----------
 GRANT USAGE ON SCHEMA cron TO postgres, anon, authenticated;
