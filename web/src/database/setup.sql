@@ -3,7 +3,8 @@
 -- Run after cleanup.sql (or on a new project). Creates:
 --   public.arduino_logs (tremor / gyro — matches Arduino + web app)
 --   public.emg_readings (EMG demo / README examples)
--- Seeds: Jan + Mar + Apr 1–4 2026 arduino_logs + 2h EMG sample data.
+-- Seeds: Jan + Mar + Apr 1–4 2026 arduino_logs + rolling ~28m live-demo rows
+--   (no/mild/intense) + 2h EMG sample data.
 -- ============================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -211,7 +212,7 @@ FROM (
 ) AS calm;
 
 -- ---------- Seed: arduino_logs (March 2026 + April 1–4) ----------
--- Six readings per calendar day; ~half NO TREMOR; rest mild/intense per firmware thresholds.
+-- Six readings per calendar day; slots 1–2 always NO TREMOR (vib=0); 3–6 mild/intense by band.
 INSERT INTO public.arduino_logs (gyro_mag, gx, gy, gz, vib_count, severity, created_at)
 WITH day_slot AS (
   SELECT
@@ -226,7 +227,10 @@ base AS (
     day,
     slot,
     h,
-    CASE WHEN (h % 10) < 5 THEN 0 ELSE ((h % 12) + 1) END AS vib_count,
+    CASE
+      WHEN slot <= 2 THEN 0
+      ELSE ((h % 12) + 1)
+    END AS vib_count,
     (h % 3) AS band
   FROM day_slot
 ),
@@ -280,3 +284,34 @@ SELECT d.device_id,
        now() - (s.seconds * interval '1 second') AS created_at
 FROM (VALUES ('esp32-1'), ('mega2560-1')) AS d(device_id)
 CROSS JOIN generate_series(0, 7200, 30) AS s(seconds);
+
+-- ---------- Seed: arduino_logs (rolling — last ~28 min, all severities for Live 30m tab) ----------
+INSERT INTO public.arduino_logs (gyro_mag, gx, gy, gz, vib_count, severity, created_at)
+SELECT
+  gyro_mag,
+  (gyro_mag * 0.47 + (i % 2500))::double precision AS gx,
+  (gyro_mag * 0.49 + (i % 2200))::double precision AS gy,
+  (gyro_mag * 0.44 + (i % 2000))::double precision AS gz,
+  vib_count,
+  severity,
+  now() - ((28 - i * 2) * interval '1 minute') AS created_at
+FROM (
+  SELECT
+    generate_series AS i,
+    CASE (generate_series % 3)
+      WHEN 0 THEN 6400.0 + (generate_series * 37)::double precision
+      WHEN 1 THEN 11800.0 + (generate_series * 41)::double precision
+      ELSE 25200.0 + (generate_series * 43)::double precision
+    END AS gyro_mag,
+    CASE (generate_series % 3)
+      WHEN 0 THEN 0
+      WHEN 1 THEN 3 + (generate_series % 5)
+      ELSE 8 + (generate_series % 6)
+    END AS vib_count,
+    CASE (generate_series % 3)
+      WHEN 0 THEN 'NO TREMOR'
+      WHEN 1 THEN 'MILD TREMOR'
+      ELSE 'INTENSE TREMOR'
+    END AS severity
+  FROM generate_series(0, 11)
+) AS t;
