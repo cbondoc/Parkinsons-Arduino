@@ -12,7 +12,7 @@ This app logs EMG sensor readings every 30s from Arduino to Supabase and visuali
 ## 1) Supabase Setup
 
 1. Create a project at https://supabase.com.
-2. Open SQL Editor and run `supabase.sql` in this folder.
+2. Open SQL Editor: run `cleanup.sql` then `setup.sql` in this folder (full reset + schema, RLS, cron, seeds).
 3. Get API values:
    - Project Settings → API → Project URL
    - anon public API key
@@ -172,7 +172,7 @@ void loop() {
 
 ## Data retention
 
-A daily cron job deletes rows older than 1 month (see `supabase.sql`).
+A daily cron job deletes `emg_readings` rows older than 1 month (see `setup.sql`).
 
 ## Safety
 

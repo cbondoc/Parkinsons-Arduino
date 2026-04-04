@@ -81,7 +81,7 @@ export default function TremorTable() {
       console.warn("⚠️ No data returned from test query");
       console.warn("Possible causes:");
       console.warn("  1. Table is empty");
-      console.warn("  2. RLS policies are blocking access (run setup_arduino_logs_rls.sql)");
+      console.warn("  2. RLS policies are blocking access (run web/setup.sql in Supabase SQL Editor)");
       console.warn("  3. Wrong table name (expected: arduino_logs)");
       console.warn("  4. Wrong Supabase project/database");
       
