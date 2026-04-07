@@ -10,21 +10,19 @@
 
 /* ==================== WIFI / SUPABASE ==================== */
 
-const char* WIFI_SSID = "parkinsons";
-const char* WIFI_PASS = "12345678";
+const char* WIFI_SSID = "2.4WIFI_Contagion.exe";
+const char* WIFI_PASS = "noentry2012";
 
-const char SUPABASE_HOST[] = "eveqmavlwseuafmzqpdf.supabase.co";
-const char SUPABASE_API_KEY[] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2ZXFtYXZsd3NldWFmbXpxcGRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1NjE1MDksImV4cCI6MjA5MTEzNzUwOX0.uaaLfAqvpVQuaarVjZzj1i8G44eQ7eGbUaZaJ4L7LRQ";
+const char SUPABASE_HOST[] = "emnblgwvbearctiqlfwe.supabase.co";
+const char SUPABASE_API_KEY[] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbmJsZ3d2YmVhcmN0aXFsZndlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MTM3MDcsImV4cCI6MjA3NDI4OTcwN30.h0dJYX5Vk_353hqRT8a_lURfiWKEHqVWSk2leY9zMzY";
 const char SUPABASE_PATH[] = "/rest/v1/arduino_logs";
 
 WiFiSSLClient sslClient;
 
 /* ==================== PINS ==================== */
+#define MPU_ADDR   0x68
 #define VIB_PIN    7
 #define BUZZER_PIN 8
-
-// MPU6050 I2C address: 0x68 (AD0 low) or 0x69 (AD0 high). Set at runtime by initMPU6050().
-uint8_t mpuAddr = 0;
 
 /* ==================== OBJECTS ==================== */
 ArduinoLEDMatrix matrix;
@@ -92,49 +90,6 @@ bool sendSaw201 = false;
 const unsigned long SEND_READ_TIMEOUT_MS = 15000;
 unsigned long sendReadStart = 0;
 
-/* ==================== MPU6050 (I2C) ==================== */
-#define MPU_REG_WHO_AM_I  0x75
-#define MPU_REG_PWR_MGMT  0x6B
-#define MPU_REG_GYRO_CFG  0x1B
-#define MPU_REG_GYRO_XH   0x43
-
-static uint8_t mpuReadReg(uint8_t addr, uint8_t reg) {
-  Wire.beginTransmission(addr);
-  Wire.write(reg);
-  if (Wire.endTransmission(false) != 0) return 0xFF;
-  if (Wire.requestFrom(addr, (uint8_t)1) != 1) return 0xFF;
-  return (uint8_t)Wire.read();
-}
-
-static bool mpuWriteReg(uint8_t addr, uint8_t reg, uint8_t val) {
-  Wire.beginTransmission(addr);
-  Wire.write(reg);
-  Wire.write(val);
-  return Wire.endTransmission(true) == 0;
-}
-
-// Returns true if an MPU-class device answers (WHO_AM_I) and wake/gyro config succeeded.
-bool initMPU6050() {
-  const uint8_t candidates[] = { 0x68, 0x69 };
-  for (uint8_t i = 0; i < 2; i++) {
-    uint8_t a = candidates[i];
-    uint8_t who = mpuReadReg(a, MPU_REG_WHO_AM_I);
-    // MPU-6050/6000: 0x68; MPU-9250: 0x71; MPU-6500: 0x70 (same gyro register map)
-    if (who != 0x68 && who != 0x71 && who != 0x70) continue;
-
-    if (!mpuWriteReg(a, MPU_REG_PWR_MGMT, 0x80)) continue;  // reset
-    delay(100);
-    if (!mpuWriteReg(a, MPU_REG_PWR_MGMT, 0x00)) continue;  // wake, internal clock
-    delay(20);
-    if (!mpuWriteReg(a, MPU_REG_GYRO_CFG, 0x00)) continue;  // ±250 °/s
-
-    mpuAddr = a;
-    return true;
-  }
-  mpuAddr = 0;
-  return false;
-}
-
 /* ==================== SETUP ==================== */
 void setup() {
   Serial.begin(115200);
@@ -147,15 +102,14 @@ void setup() {
   Wire.begin();
   Wire.setClock(100000);
 
+  // Wake MPU6050
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x6B);
+  Wire.write(0x00);
+  Wire.endTransmission(true);
+
   matrix.begin();
   matrix.loadFrame(FRAME_OFF);
-
-  if (!initMPU6050()) {
-    Serial.println("⚠️ MPU not detected on I2C — gyro will stay 0. Check wiring, 3V3, SDA/SCL, AD0 (0x68 vs 0x69).");
-  } else {
-    Serial.print("✅ MPU OK at I2C 0x");
-    Serial.println(mpuAddr, HEX);
-  }
 
 #if !CALIBRATE
   connectWiFi();
@@ -210,30 +164,22 @@ void connectWiFi() {
 
 /* ==================== MPU6050 ==================== */
 void readMPU6050() {
-  if (mpuAddr == 0) return;
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x43);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, 6, true);
 
-  Wire.beginTransmission(mpuAddr);
-  Wire.write(MPU_REG_GYRO_XH);
-  if (Wire.endTransmission(false) != 0) {
-    while (Wire.available()) Wire.read();
-    return;
+  if (Wire.available() == 6) {
+    gx = Wire.read() << 8 | Wire.read();
+    gy = Wire.read() << 8 | Wire.read();
+    gz = Wire.read() << 8 | Wire.read();
+
+    gyroMag = sqrt(
+      (float)gx * gx +
+      (float)gy * gy +
+      (float)gz * gz
+    );
   }
-
-  uint8_t n = Wire.requestFrom(mpuAddr, (uint8_t)6);
-  if (n != 6) {
-    while (Wire.available()) Wire.read();
-    return;
-  }
-
-  gx = (int16_t)((Wire.read() << 8) | Wire.read());
-  gy = (int16_t)((Wire.read() << 8) | Wire.read());
-  gz = (int16_t)((Wire.read() << 8) | Wire.read());
-
-  gyroMag = sqrt(
-    (float)gx * gx +
-    (float)gy * gy +
-    (float)gz * gz
-  );
 }
 
 /* ==================== VIBRATION ==================== */
